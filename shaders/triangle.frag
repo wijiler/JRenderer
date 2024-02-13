@@ -1,8 +1,13 @@
 #version 450
 
-layout(location = 0) in vec4 fragColor;
-layout(location = 1) out vec4 outColor;
+//shader input
+layout (location = 0) in vec3 inColor;
 
-void main() {
-    outColor = fragColor;
+//output write
+layout (location = 0) out vec4 outFragColor;
+
+void main() 
+{
+	//return red
+	outFragColor = vec4(inColor,1.0f);
 }

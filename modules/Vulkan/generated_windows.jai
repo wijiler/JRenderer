@@ -10050,9 +10050,9 @@ VkRenderingInfo :: struct {
     pNext:                *void;
     flags:                VkRenderingFlags;
     renderArea:           VkRect2D;
-    layerCount:           u32;
-    viewMask:             u32;
-    colorAttachmentCount: u32;
+    layerCount:           u32 = 1;
+    viewMask:             u32 = 0;
+    colorAttachmentCount: u32 = 0;
     pColorAttachments:    *VkRenderingAttachmentInfo;
     pDepthAttachment:     *VkRenderingAttachmentInfo;
     pStencilAttachment:   *VkRenderingAttachmentInfo;

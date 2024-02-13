@@ -14,7 +14,9 @@ draw_frame :: (r:*fwdpp_r,bg:Vector4) {
     vkWaitForFences(r.pipeline.lDevice, 1, *frameFences[index], VK_TRUE, U64_MAX);
     vkResetFences(r.pipeline.lDevice, 1, *frameFences[index]);
 
+
     record_buffers(r);
+
 
     submitInfo: VkSubmitInfo; 
     submitInfo.waitSemaphoreCount   = 1;
@@ -26,6 +28,7 @@ draw_frame :: (r:*fwdpp_r,bg:Vector4) {
     submitInfo.pSignalSemaphores    = *renderFinishedSemaphores[index];
     vkQueueSubmit(r.pipeline.gQueue, 1, *submitInfo, frameFences[index]);
 
+
     // Present.
     presentInfo: VkPresentInfoKHR;
     presentInfo.waitSemaphoreCount = 1;
@@ -36,7 +39,8 @@ draw_frame :: (r:*fwdpp_r,bg:Vector4) {
     r.pipeline.g_Pipeline.presentinfo = presentInfo;
     vkQueuePresentKHR(r.pipeline.pQueue, *presentInfo);
     end := seconds_since_init();
-    print("delta:%\nframerate:%\n", end - begin,frame_index/begin);
+
+    //print("delta:%\nframerate:%\n", end - begin,frame_index/begin);
 }
 
 
@@ -47,11 +51,66 @@ FRAME_COUNT :: 2;
 frame_index := 0;
 commandPool   : VkCommandPool;
 commandBuffers: [FRAME_COUNT]VkCommandBuffer;
-frameFences   : [FRAME_COUNT]VkFence; // Create with VK_FENCE_CREATE_SIGNALED_BIT.
+frameFences   : [FRAME_COUNT]VkFence;
 imageAvailableSemaphores: [FRAME_COUNT]VkSemaphore;
 renderFinishedSemaphores: [FRAME_COUNT]VkSemaphore;
 
 #scope_module
+draw_geometry :: (r:*fwdpp_r) {
+    index := frame_index % FRAME_COUNT;
+
+
+}
+
+
+attachment_info :: (view:VkImageView,clear:*VkClearValue ,layout:VkImageLayout) -> VkRenderingAttachmentInfo
+{
+    colorAttachment:VkRenderingAttachmentInfo = .{};
+    colorAttachment.sType = .VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    colorAttachment.pNext = null;
+
+    colorAttachment.imageView = view;
+    colorAttachment.imageLayout = layout;
+    colorAttachment.loadOp = ifx clear then .VK_ATTACHMENT_LOAD_OP_CLEAR else .VK_ATTACHMENT_LOAD_OP_LOAD;
+    colorAttachment.storeOp = .VK_ATTACHMENT_STORE_OP_STORE;
+    if (clear) {
+        colorAttachment.clearValue = clear;
+    }
+
+    return colorAttachment;
+}
+
+depth_attachment_info :: (view:VkImageView, layout:VkImageLayout) -> VkRenderingAttachmentInfo
+{
+    depthAttachment: VkRenderingAttachmentInfo = .{};
+    depthAttachment.sType = .VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    depthAttachment.pNext = null;
+
+    depthAttachment.imageView = view;
+    depthAttachment.imageLayout = layout;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    depthAttachment.clearValue.depthStencil.depth = 0;
+
+    return depthAttachment;
+}
+
+rendering_info :: (renderExtent:VkExtent2D,  colorAttachment:*VkRenderingAttachmentInfo,depthAttachment:*VkRenderingAttachmentInfo) -> VkRenderingInfo
+{
+    renderInfo:VkRenderingInfo  = .{};
+    renderInfo.sType = .VK_STRUCTURE_TYPE_RENDERING_INFO;
+    renderInfo.pNext = null;
+
+    renderInfo.renderArea = VkRect2D.{ VkOffset2D.{ 0, 0 }, renderExtent };
+    renderInfo.layerCount = 1;
+    renderInfo.colorAttachmentCount = 1;
+    renderInfo.pColorAttachments = colorAttachment;
+    renderInfo.pDepthAttachment = depthAttachment;
+    renderInfo.pStencilAttachment = null;
+
+    return renderInfo;
+}
+
 record_buffers :: (r:*fwdpp_r) {
     
     index := frame_index % FRAME_COUNT;
@@ -73,7 +132,6 @@ record_buffers :: (r:*fwdpp_r) {
         baseArrayLayer = 0;
         layerCount     = VK_REMAINING_ARRAY_LAYERS;
     }
-    
     // Change layout of image to be optimal for clearing
     imgMemoryBarrier : VkImageMemoryBarrier;
     {
@@ -112,12 +170,39 @@ record_buffers :: (r:*fwdpp_r) {
     imgMemoryBarrier.dstAccessMask = .MEMORY_READ_BIT;
     imgMemoryBarrier.oldLayout     = .TRANSFER_DST_OPTIMAL;
     imgMemoryBarrier.newLayout     = .PRESENT_SRC_KHR;
-    //imgMemoryBarrier.srcQueueFamilyIndex = queue_family_index;
-    //imgMemoryBarrier.dstQueueFamilyIndex = queue_family_index;
-    //imgMemoryBarrier.image = swapchainImages[imageIndex];
-    //imgMemoryBarrier.subresourceRange = subResourceRange;
+
     vkCmdPipelineBarrier(commandBuffers[index], .TRANSFER_BIT, .BOTTOM_OF_PIPE_BIT,
         0, 0, null, 0, null, 1, *imgMemoryBarrier);
+
+
+    cAttInfo:VkRenderingAttachmentInfo = attachment_info(r.pipeline.ImageViews[imageIndex],null,.VK_IMAGE_LAYOUT_GENERAL);
+    renInf:VkRenderingInfo = rendering_info(r.pipeline.Extent,*cAttInfo,null);
+
+    vkCmdBeginRendering(r.pipeline.g_Pipeline.commandBuffers[index],*renInf);// TODO: Error's here
+
+
+    vkCmdBindPipeline(r.pipeline.g_Pipeline.commandBuffers[index], .VK_PIPELINE_BIND_POINT_GRAPHICS, r.pipeline.g_Pipeline.pipeline);
+
+    scissor: VkRect2D = .{};
+	scissor.offset.x = 0;
+	scissor.offset.y = 0;
+	scissor.extent.width = r.pipeline.Extent.width;
+	scissor.extent.height = r.pipeline.Extent.height;
+
+    vkCmdSetScissor(r.pipeline.g_Pipeline.commandBuffers[index], 0, 1, *scissor);
+    
+    viewport:VkViewport = .{};
+	viewport.x = 0;
+	viewport.y = 0;
+	viewport.width  = xx r.pipeline.Extent.width;
+	viewport.height = xx r.pipeline.Extent.height;
+	viewport.minDepth = 0;
+	viewport.maxDepth = 1;
+    vkCmdSetViewport(r.pipeline.g_Pipeline.commandBuffers[index], 0, 1, *r.pipeline.g_Pipeline.viewport);
+
+    vkCmdDraw(r.pipeline.g_Pipeline.commandBuffers[index], 3, 1, 0, 0);
+    
+    vkCmdEndRendering(commandBuffers[index]);
 
     vkEndCommandBuffer(commandBuffers[index]);
 }
@@ -175,3 +260,4 @@ init_cbuf :: (gpLine:*fwdpp_r) {
 
     print("Created command buffers");
 }
+#import "Vulkan";

@@ -171,7 +171,7 @@ create_g_pipeline :: (r:*fwdpp_r) {
     rast.rasterizerDiscardEnable = VK_FALSE;
     rast.polygonMode = .VK_POLYGON_MODE_FILL;
     rast.lineWidth = 1.0;
-    rast.cullMode = .VK_CULL_MODE_BACK_BIT;
+    rast.cullMode = .VK_CULL_MODE_NONE;
     rast.frontFace = .VK_FRONT_FACE_CLOCKWISE;
     rast.depthBiasEnable = VK_FALSE;
     rast.depthBiasConstantFactor = 0.0;
@@ -194,6 +194,17 @@ create_g_pipeline :: (r:*fwdpp_r) {
     colorBlendAtt.srcAlphaBlendFactor = .VK_BLEND_FACTOR_ONE;
     colorBlendAtt.dstAlphaBlendFactor = .VK_BLEND_FACTOR_ZERO;
     colorBlendAtt.alphaBlendOp = .VK_BLEND_OP_ADD;
+
+    depthStencilCI: VkPipelineDepthStencilStateCreateInfo;
+    depthStencilCI.depthTestEnable = VK_FALSE;
+	depthStencilCI.depthWriteEnable = VK_FALSE;
+	depthStencilCI.depthCompareOp = .VK_COMPARE_OP_NEVER;
+	depthStencilCI.depthBoundsTestEnable = VK_FALSE;
+	depthStencilCI.stencilTestEnable = VK_FALSE;
+	depthStencilCI.front = .{};
+	depthStencilCI.back = .{};
+	depthStencilCI.minDepthBounds = 0;
+	depthStencilCI.maxDepthBounds= 1;
 
     colorBlend: VkPipelineColorBlendStateCreateInfo;
     colorBlend.logicOpEnable = VK_FALSE;
@@ -227,7 +238,7 @@ create_g_pipeline :: (r:*fwdpp_r) {
     pipeCInfo.pViewportState = *vpState;
     pipeCInfo.pRasterizationState = *rast;
     pipeCInfo.pMultisampleState = *multisampling;
-    //pipeCInfo.pDepthStencilState = *depthStencilStateCI;
+    pipeCInfo.pDepthStencilState = *depthStencilCI;
     pipeCInfo.pColorBlendState = *colorBlend;
     pipeCInfo.pDynamicState = *stateCInfo;
     pipeCInfo.layout = gpLine.plLayout;
