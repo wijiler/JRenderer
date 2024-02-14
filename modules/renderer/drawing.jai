@@ -190,7 +190,7 @@ record_buffers :: (r:*fwdpp_r) {
 	scissor.extent.height = r.pipeline.Extent.height;
 
     vkCmdSetScissor(r.pipeline.g_Pipeline.commandBuffers[index], 0, 1, *scissor);
-    
+
     viewport:VkViewport = .{};
 	viewport.x = 0;
 	viewport.y = 0;
@@ -208,23 +208,23 @@ record_buffers :: (r:*fwdpp_r) {
 }
 
 
-framebuffers :: (gpLine:*fwdpp_r) {
-    gpLine.pipeline.g_Pipeline.fbuffers = NewArray(gpLine.pipeline.ImageViews.count,VkFramebuffer);
+// framebuffers :: (gpLine:*fwdpp_r) {
+//     gpLine.pipeline.g_Pipeline.fbuffers = NewArray(gpLine.pipeline.ImageViews.count,VkFramebuffer);
 
-    for 0..gpLine.pipeline.ImageViews.count -1 {
-        framebufferCI:VkFramebufferCreateInfo;
-        framebufferCI.renderPass = gpLine.pipeline.g_Pipeline.rpass;
-        framebufferCI.attachmentCount = 1;
-        framebufferCI.pAttachments = *gpLine.pipeline.ImageViews[it];
-        framebufferCI.width = gpLine.pipeline.Extent.width;
-        framebufferCI.height = gpLine.pipeline.Extent.height;
-        framebufferCI.layers = 1;
-        result := vkCreateFramebuffer(gpLine.pipeline.lDevice,*framebufferCI,null,*gpLine.pipeline.g_Pipeline.fbuffers[it]);
-        if result != .VK_SUCCESS {
-            log(.Warning,sprint("Could not create framebuffer because:%\n",result));
-        }
-    }
-}
+//     for 0..gpLine.pipeline.ImageViews.count -1 {
+//         framebufferCI:VkFramebufferCreateInfo;
+//         //framebufferCI.renderPass = gpLine.pipeline.g_Pipeline.rpass;
+//         framebufferCI.attachmentCount = 1;
+//         framebufferCI.pAttachments = *gpLine.pipeline.ImageViews[it];
+//         framebufferCI.width = gpLine.pipeline.Extent.width;
+//         framebufferCI.height = gpLine.pipeline.Extent.height;
+//         framebufferCI.layers = 1;
+//         result := vkCreateFramebuffer(gpLine.pipeline.lDevice,*framebufferCI,null,*gpLine.pipeline.g_Pipeline.fbuffers[it]);
+//         if result != .VK_SUCCESS {
+//             log(.Warning,sprint("Could not create framebuffer because:%\n",result));
+//         }
+//     }
+// }
 
 init_cbuf :: (gpLine:*fwdpp_r) {
 

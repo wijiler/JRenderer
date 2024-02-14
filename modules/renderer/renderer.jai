@@ -39,9 +39,9 @@ cleanup :: (r:fwdpp_r) {
     for view: r.pipeline.ImageViews {
         vkDestroyImageView(r.pipeline.lDevice,view,null);
     }
-    for fb: r.pipeline.g_Pipeline.fbuffers {
-        vkDestroyFramebuffer(r.pipeline.lDevice,fb,null);
-    }
+    // for fb: r.pipeline.g_Pipeline.fbuffers {
+    //     vkDestroyFramebuffer(r.pipeline.lDevice,fb,null);
+    // }
     vkDestroySemaphore(r.pipeline.lDevice,r.pipeline.g_Pipeline.sync.imageAvailable[0],null);
     vkDestroySemaphore(r.pipeline.lDevice,r.pipeline.g_Pipeline.sync.renderFinished[0],null);
     vkDestroyFence(r.pipeline.lDevice,r.pipeline.g_Pipeline.sync.inFlight[0],null);
@@ -54,7 +54,7 @@ cleanup :: (r:fwdpp_r) {
     vkDestroyPipelineLayout(r.pipeline.lDevice, r.pipeline.g_Pipeline.plLayout, null);
     vkDestroyShaderModule(r.pipeline.lDevice,r.pipeline.g_Pipeline.mainshaders[0],null);
     vkDestroyShaderModule(r.pipeline.lDevice,r.pipeline.g_Pipeline.mainshaders[1],null);
-    vkDestroyRenderPass(r.pipeline.lDevice, r.pipeline.g_Pipeline.rpass, null);
+    //vkDestroyRenderPass(r.pipeline.lDevice, r.pipeline.g_Pipeline.rpass, null);
     vkDestroyDevice(r.pipeline.lDevice,null);
     vkDestroyInstance(r.pipeline.inst,null);
 }
@@ -62,6 +62,12 @@ cleanup :: (r:fwdpp_r) {
 #scope_module
 device_extensions:[] *u8 = .[
     VK_KHR_SWAPCHAIN_EXTENSION_NAME.data,
+    VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME.data,
+    VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME.data,
+    VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME.data,
+    VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME.data,
+    VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME.data,
+    VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME.data,
 ];
 #if OS == .WINDOWS {
     extensions:[] *u8 = .[
@@ -74,18 +80,19 @@ device_extensions:[] *u8 = .[
 
 graphics_pipeline :: struct {
     mainshaders:[2] VkShaderModule;
-    dynamic_states:[] VkDynamicState = .[.VK_DYNAMIC_STATE_VIEWPORT,.VK_DYNAMIC_STATE_SCISSOR];
+    dynamic_states:[2] VkDynamicState = .[.VK_DYNAMIC_STATE_VIEWPORT,.VK_DYNAMIC_STATE_SCISSOR];
     viewport:VkViewport;
     scissor:VkRect2D;
-    states:[] *void;
+    states:[9] *void;
     plLayout:VkPipelineLayout;
-    rpass:VkRenderPass;
+    //rpass:VkRenderPass;
     pipeline:VkPipeline;
-    fbuffers:[] VkFramebuffer;
+    //fbuffers:[] VkFramebuffer;
     commandPool:VkCommandPool;
     commandBuffers:[]VkCommandBuffer;
     sync:synchronization_data;
     presentinfo:VkPresentInfoKHR;
+    renInfo:VkPipelineRenderingCreateInfo;
 }
 
 synchronization_data :: struct {
@@ -136,9 +143,13 @@ create_g_pipeline :: (r:*fwdpp_r) {
 
     stages:[2] VkPipelineShaderStageCreateInfo = .[v_stageinf,f_stageinf];
 
+    r.pipeline.g_Pipeline.dynamic_states = .[.VK_DYNAMIC_STATE_VIEWPORT,.VK_DYNAMIC_STATE_SCISSOR];
+
     stateCInfo:VkPipelineDynamicStateCreateInfo;
+    stateCInfo.pDynamicStates = *r.pipeline.g_Pipeline.dynamic_states[0];
     stateCInfo.dynamicStateCount = 2;
-    stateCInfo.pDynamicStates = gpLine.dynamic_states.data;
+
+
 
     viInfo:VkPipelineVertexInputStateCreateInfo = .{};
 
@@ -161,22 +172,16 @@ create_g_pipeline :: (r:*fwdpp_r) {
     vpState:VkPipelineViewportStateCreateInfo = .{};
 
     vpState.viewportCount = 1;
-    vpState.pViewports = *gpLine.viewport;
+    //vpState.pViewports = *gpLine.viewport;
     vpState.scissorCount = 1;
-    vpState.pScissors = *r.pipeline.g_Pipeline.scissor;
+    //vpState.pScissors = *r.pipeline.g_Pipeline.scissor;
 
     rast:VkPipelineRasterizationStateCreateInfo = .{};
 
-    rast.depthClampEnable = VK_FALSE;
-    rast.rasterizerDiscardEnable = VK_FALSE;
     rast.polygonMode = .VK_POLYGON_MODE_FILL;
     rast.lineWidth = 1.0;
-    rast.cullMode = .VK_CULL_MODE_NONE;
+    rast.cullMode = .BACK_BIT;
     rast.frontFace = .VK_FRONT_FACE_CLOCKWISE;
-    rast.depthBiasEnable = VK_FALSE;
-    rast.depthBiasConstantFactor = 0.0;
-    rast.depthBiasClamp = 0.0;
-    rast.depthBiasSlopeFactor = 0.0;
 
     multisampling:VkPipelineMultisampleStateCreateInfo = .{};
 
@@ -226,10 +231,15 @@ create_g_pipeline :: (r:*fwdpp_r) {
         log(.Info,"Succesfully created pipeline layout\n");
     }
 
+    rInfo:VkPipelineRenderingCreateInfo = .{};
 
-    gpLine.rpass = create_render_passes(r);
+    r.pipeline.g_Pipeline.renInfo = rInfo;
+
+    //gpLine.rpass = create_render_passes(r);
 
     pipeCInfo:VkGraphicsPipelineCreateInfo = .{};
+
+    pipeCInfo.pNext = *rInfo;
 
     pipeCInfo.stageCount = stages.count;
     pipeCInfo.pStages = stages.data;
@@ -242,10 +252,15 @@ create_g_pipeline :: (r:*fwdpp_r) {
     pipeCInfo.pColorBlendState = *colorBlend;
     pipeCInfo.pDynamicState = *stateCInfo;
     pipeCInfo.layout = gpLine.plLayout;
-    pipeCInfo.renderPass = gpLine.rpass;
+    //
+    //pipeCInfo.renderPass = VK_NULL_HANDLE;
     pipeCInfo.subpass = 0;
     pipeCInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipeCInfo.basePipelineIndex = -1;
+
+    rInfo.colorAttachmentCount = 1;
+    rInfo.pColorAttachmentFormats = *r.pipeline.Format;
+    rInfo.depthAttachmentFormat = .UNDEFINED;
 
     {
         result := vkCreateGraphicsPipelines(r.pipeline.lDevice,VK_NULL_HANDLE,1,*pipeCInfo,null,*gpLine.pipeline);
@@ -257,60 +272,62 @@ create_g_pipeline :: (r:*fwdpp_r) {
 
     r.pipeline.g_Pipeline = gpLine;
 
-    framebuffers(r);
+   //framebuffers (r);
 
     init_cbuf(r);
 }
 
-create_render_passes :: (r:*fwdpp_r) -> VkRenderPass {
-    cAtt:VkAttachmentDescription = .{};
-    cAtt.format = r.pipeline.Format;
-    cAtt.samples = .VK_SAMPLE_COUNT_1_BIT;
-    cAtt.loadOp = .VK_ATTACHMENT_LOAD_OP_CLEAR;
-    cAtt.storeOp = .VK_ATTACHMENT_STORE_OP_STORE;
-    cAtt.stencilLoadOp = .VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    cAtt.stencilStoreOp = .VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    cAtt.initialLayout = .VK_IMAGE_LAYOUT_UNDEFINED;
-    cAtt.finalLayout = .TRANSFER_DST_OPTIMAL;
 
-    cAttRef:VkAttachmentReference = .{};
-    cAttRef.attachment = 0;
-    cAttRef.layout = .VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+// deprecated
+// create_render_passes :: (r:*fwdpp_r) -> VkRenderPass {
+//     cAtt:VkAttachmentDescription = .{};
+//     cAtt.format = r.pipeline.Format;
+//     cAtt.samples = .VK_SAMPLE_COUNT_1_BIT;
+//     cAtt.loadOp = .VK_ATTACHMENT_LOAD_OP_CLEAR;
+//     cAtt.storeOp = .VK_ATTACHMENT_STORE_OP_STORE;
+//     cAtt.stencilLoadOp = .VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+//     cAtt.stencilStoreOp = .VK_ATTACHMENT_STORE_OP_DONT_CARE;
+//     cAtt.initialLayout = .VK_IMAGE_LAYOUT_UNDEFINED;
+//     cAtt.finalLayout = .TRANSFER_DST_OPTIMAL;
 
-    subpass:VkSubpassDescription = .{};
-    subpass.pipelineBindPoint = .VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = *cAttRef;
+//     cAttRef:VkAttachmentReference = .{};
+//     cAttRef.attachment = 0;
+//     cAttRef.layout = .VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    renderpass:VkRenderPass;
-    rPassCinfo:VkRenderPassCreateInfo = .{};
+//     subpass:VkSubpassDescription = .{};
+//     subpass.pipelineBindPoint = .VK_PIPELINE_BIND_POINT_GRAPHICS;
+//     subpass.colorAttachmentCount = 1;
+//     subpass.pColorAttachments = *cAttRef;
 
-    rPassCinfo.attachmentCount = 1;
-    rPassCinfo.pAttachments = *cAtt;
-    rPassCinfo.subpassCount = 1;
-    rPassCinfo.pSubpasses = *subpass;
+//     renderpass:VkRenderPass;
+//     rPassCinfo:VkRenderPassCreateInfo = .{};
 
-    sDependency:VkSubpassDependency = .{};
-    sDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    sDependency.dstSubpass = 0;
+//     rPassCinfo.attachmentCount = 1;
+//     rPassCinfo.pAttachments = *cAtt;
+//     rPassCinfo.subpassCount = 1;
+//     rPassCinfo.pSubpasses = *subpass;
 
-    sDependency.srcStageMask = .VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    sDependency.srcAccessMask = 0;
-    sDependency.dstStageMask = .VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    sDependency.dstAccessMask = .VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+//     sDependency:VkSubpassDependency = .{};
+//     sDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+//     sDependency.dstSubpass = 0;
 
-    rPassCinfo.dependencyCount = 1;
-    rPassCinfo.pDependencies = *sDependency;
+//     sDependency.srcStageMask = .VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+//     sDependency.srcAccessMask = 0;
+//     sDependency.dstStageMask = .VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+//     sDependency.dstAccessMask = .VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-    result := vkCreateRenderPass(r.pipeline.lDevice,*rPassCinfo,null,*renderpass);
-    if result != .VK_SUCCESS {
-        log(.Error,sprint("could not create render pass %\n",result));
-    }
-    log(.Info,"set up rendererpasses\n");
+//     rPassCinfo.dependencyCount = 1;
+//     rPassCinfo.pDependencies = *sDependency;
+
+//     result := vkCreateRenderPass(r.pipeline.lDevice,*rPassCinfo,null,*renderpass);
+//     if result != .VK_SUCCESS {
+//         log(.Error,sprint("could not create render pass %\n",result));
+//     }
+//     log(.Info,"set up rendererpasses\n");
 
 
-    return renderpass;
-}
+//     return renderpass;
+// }
 
 get_image_views :: (pipeline:*Vk_Pipeline) {
     pipeline.ImageViews = NewArray(pipeline.imgs.count,VkImageView);
@@ -370,8 +387,8 @@ init_vk :: (win:winfo_t) -> Vk_Pipeline {
     appinf.pApplicationName = "Jcad";
     appinf.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     appinf.pEngineName = "No Engine";
-    appinf.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    appinf.apiVersion = VK_API_VERSION_1_0;
+    appinf.engineVersion = VK_MAKE_VERSION(1, 3, 0);
+    appinf.apiVersion = VK_MAKE_VERSION(1, 3, 0);
 
     createinf:VkInstanceCreateInfo = .{};
     createinf.pApplicationInfo = *appinf;
@@ -434,12 +451,19 @@ init_vk :: (win:winfo_t) -> Vk_Pipeline {
 
     createqInfo.pQueuePriorities = *priority;
 
+    enabledynRend:VkPhysicalDeviceVulkan13Features = .{};
+
+    enabledynRend.dynamicRendering = VK_TRUE;
+    enabledynRend.synchronization2 = VK_TRUE;
+
+
     ldCreateInfo:VkDeviceCreateInfo = .{};
+    ldCreateInfo.pNext = *enabledynRend;
     ldCreateInfo.pQueueCreateInfos = *createqInfo;
     ldCreateInfo.queueCreateInfoCount = 1;
     ldCreateInfo.pEnabledFeatures = *devfeatures;
 
-    ldCreateInfo.enabledExtensionCount = xx  device_extensions.count;
+    ldCreateInfo.enabledExtensionCount = xx device_extensions.count;
     ldCreateInfo.ppEnabledExtensionNames = device_extensions.data;
 
     ldCreateInfo.enabledLayerCount = 0;
@@ -571,16 +595,21 @@ is_device_valid :: (devices:[] VkPhysicalDevice,surface:VkSurfaceKHR) -> VkPhysi
 
     devProps:VkPhysicalDeviceProperties = .{};
     devFeatures:VkPhysicalDeviceFeatures = .{};
+    features13:VkPhysicalDeviceVulkan13Features = .{};
+    devFeatures2:VkPhysicalDeviceFeatures2 = .{pNext=*features13};
     qfamProps:[..] VkQueueFamilyProperties;
     gfami:u32 = 0;
     for device: devices {
         vkGetPhysicalDeviceProperties(device, *devProps);
         vkGetPhysicalDeviceFeatures(device, *devFeatures);
+        vkGetPhysicalDeviceFeatures2(device,*devFeatures2);
 
         queue_family_count: u32 = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(device, *queue_family_count, null);
         queue_family_count = min(queue_family_count, 8);
         vkGetPhysicalDeviceQueueFamilyProperties(device, *queue_family_count, qfamProps.data);
+
+
 
         for j:0..qfamProps.count -1 {
             supports_present := VK_FALSE;
@@ -592,7 +621,7 @@ is_device_valid :: (devices:[] VkPhysicalDevice,surface:VkSurfaceKHR) -> VkPhysi
             }
         }   
 
-        if devProps.deviceType == .DISCRETE_GPU && devFeatures.geometryShader  {
+        if devProps.deviceType == .DISCRETE_GPU && devFeatures.geometryShader && features13.dynamicRendering {
             return device,gfami,devFeatures;
         }
     }
