@@ -178,7 +178,7 @@ record_buffers :: (r:*fwdpp_r) {
     cAttInfo:VkRenderingAttachmentInfo = attachment_info(r.pipeline.ImageViews[imageIndex],null,.VK_IMAGE_LAYOUT_GENERAL);
     renInf:VkRenderingInfo = rendering_info(r.pipeline.Extent,*cAttInfo,null);
 
-    vkCmdBeginRendering(r.pipeline.g_Pipeline.commandBuffers[index],*renInf);// TODO: Error's here
+    vkCmdBeginRendering(r.pipeline.g_Pipeline.commandBuffers[index],*renInf);
 
 
     vkCmdBindPipeline(r.pipeline.g_Pipeline.commandBuffers[index], .VK_PIPELINE_BIND_POINT_GRAPHICS, r.pipeline.g_Pipeline.pipeline);

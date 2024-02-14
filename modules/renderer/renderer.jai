@@ -180,7 +180,7 @@ create_g_pipeline :: (r:*fwdpp_r) {
 
     rast.polygonMode = .VK_POLYGON_MODE_FILL;
     rast.lineWidth = 1.0;
-    rast.cullMode = .BACK_BIT;
+    rast.cullMode = .NONE;
     rast.frontFace = .VK_FRONT_FACE_CLOCKWISE;
 
     multisampling:VkPipelineMultisampleStateCreateInfo = .{};
