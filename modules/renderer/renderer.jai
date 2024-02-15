@@ -19,6 +19,7 @@ Vk_Pipeline :: struct {
 // foward ++ renderer
 fwdpp_r :: struct {
     pipeline:Vk_Pipeline;
+    mesh:Mesh;
 }
 
 init_renderer :: (win:winfo_t) -> fwdpp_r {
@@ -73,7 +74,7 @@ device_extensions:[] *u8 = .[
     extensions:[] *u8 = .[
         VK_KHR_SURFACE_EXTENSION_NAME.data,
         VK_KHR_WIN32_SURFACE_EXTENSION_NAME.data,
-        VK_EXT_DEBUG_UTILS_EXTENSION_NAME.data,
+        //VK_EXT_DEBUG_UTILS_EXTENSION_NAME.data,
     ];
 
 }
@@ -357,28 +358,28 @@ get_image_views :: (pipeline:*Vk_Pipeline) {
 }
 
 
+#if DEBUG {
+    enabled_layers:[1] *u8 = .["VK_LAYER_KHRONOS_validation".data];
 
-enabled_layers:[1] *u8 = .["VK_LAYER_KHRONOS_validation".data];
-
-vulkan_debug_callback :: (message_severity : VkDebugUtilsMessageSeverityFlagBitsEXT,
-                    message_types : VkDebugUtilsMessageTypeFlagsEXT,
-                    callback_data : *VkDebugUtilsMessengerCallbackDataEXT,
-                    user_data : *void) -> VkBool32 #c_call {
-    
-    context_pointer := cast(*Context)user_data;
-    push_context context_pointer.* {
-        if (message_severity & .VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT && context.log_level != .VERBOSE && context.log_level != .VERY_VERBOSE) return VK_FALSE;
-        message := to_string(callback_data.pMessage);
-        if (message_severity & .VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-            log_error("%", message);
-        } else {
-            log("%", message);
+    vulkan_debug_callback :: (message_severity : VkDebugUtilsMessageSeverityFlagBitsEXT,
+                        message_types : VkDebugUtilsMessageTypeFlagsEXT,
+                        callback_data : *VkDebugUtilsMessengerCallbackDataEXT,
+                        user_data : *void) -> VkBool32 #c_call {
+        
+        context_pointer := cast(*Context)user_data;
+        push_context context_pointer.* {
+            if (message_severity & .VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT && context.log_level != .VERBOSE && context.log_level != .VERY_VERBOSE) return VK_FALSE;
+            message := to_string(callback_data.pMessage);
+            if (message_severity & .VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+                log_error("%", message);
+            } else {
+                log("%", message);
+            }
         }
+        
+        return VK_FALSE;
     }
-    
-    return VK_FALSE;
 }
-
 init_vk :: (win:winfo_t) -> Vk_Pipeline {
     // Instance creation
     vk:Vk_Pipeline = .{};
@@ -673,6 +674,56 @@ choose_schain_settings :: (formats:[] VkSurfaceFormatKHR,modes:[..] VkPresentMod
     return fmt,mde,extent;
 }
 
+buffer :: struct {
+    vBuffer:VkBuffer;
+    type:bufferUsage;
+    
+}
+
+bufferUsage :: enum u32 {
+    UNIFORM :: VkBufferUsageFlagBits.UNIFORM_BUFFER_BIT; // NOTE: when using this memory is read-only this also is a small buffer
+    STORAGE :: VkBufferUsageFlagBits.STORAGE_BUFFER_BIT;
+    VERTEX :: VkBufferUsageFlagBits.VERTEX_BUFFER_BIT;
+    INDEX :: VkBufferUsageFlagBits.INDEX_BUFFER_BIT;
+}
+
+
+Vertex :: struct {
+    pos:Vector3;
+    uv:Vector2;
+    // We do not need normals for a CAD program
+    color:Vector4;
+}
+
+Mesh :: struct {
+    vertexBuf:buffer;
+    indexBuf:buffer;
+    vertexLoc:VkDeviceAddress;
+}
+
+load_mesh :: (r:*fwdpp_r) -> Mesh {
+    model:Mesh;
+
+    alloc_buffers();
+    
+}
+
+alloc_buffers :: (bytes:u64,use:bufferUsage,r:*fwdpp_r) ->  buffer {
+    #assert(bytes >= 128000 && bytes <= U32_MAX);
+
+    buf:buffer;
+
+    bufferCI:VkBufferCreateInfo = .{};
+
+    bufferCI.size = bytes;
+    bufferCI.usage = xx bufferUsage;
+    bufferCI.sharingMode = .EXCLUSIVE; // we want to ensure no shenanigans happen
+
+    vkCreateBuffer(r.pipeline.lDevice,*bufferCI,null,*buf.vBuffer);
+    buf.type = use;
+
+    return buf;
+}
 
 
 #load "log.jai";

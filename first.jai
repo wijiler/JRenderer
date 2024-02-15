@@ -10,8 +10,8 @@ build :: () {
 
         options.import_path = imp;
         options.output_executable_name = "jCAD";
-        //set_optimization(*options, .VERY_OPTIMIZED);
         set_build_options_dc(.{do_output=false});
+        //set_optimization(*options, .VERY_OPTIMIZED);
         compiler_begin_intercept(w);
         set_build_options(*options,w);
         add_build_file("main.jai",w);

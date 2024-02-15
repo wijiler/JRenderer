@@ -40,7 +40,7 @@ draw_frame :: (r:*fwdpp_r,bg:Vector4) {
     vkQueuePresentKHR(r.pipeline.pQueue, *presentInfo);
     end := seconds_since_init();
 
-    //print("delta:%\nframerate:%\n", end - begin,frame_index/begin);
+    print("delta:%\nframerate:%\n", end - begin,frame_index/begin);
 }
 
 
@@ -56,12 +56,6 @@ imageAvailableSemaphores: [FRAME_COUNT]VkSemaphore;
 renderFinishedSemaphores: [FRAME_COUNT]VkSemaphore;
 
 #scope_module
-draw_geometry :: (r:*fwdpp_r) {
-    index := frame_index % FRAME_COUNT;
-
-
-}
-
 
 attachment_info :: (view:VkImageView,clear:*VkClearValue ,layout:VkImageLayout) -> VkRenderingAttachmentInfo
 {
@@ -110,7 +104,9 @@ rendering_info :: (renderExtent:VkExtent2D,  colorAttachment:*VkRenderingAttachm
 
     return renderInfo;
 }
-
+// Pick a color with which to clear the screen.
+color1 := Vector4.{1,  0.15, 1, 1};
+color2 := Vector4.{0, 0, 0, 1};
 record_buffers :: (r:*fwdpp_r) {
     
     index := frame_index % FRAME_COUNT;
@@ -151,9 +147,7 @@ record_buffers :: (r:*fwdpp_r) {
 
     clearColor : VkClearColorValue;
     {
-        // Pick a color with which to clear the screen.
-        color1 := Vector4.{1,  0.15, 1, 1};
-        color2 := Vector4.{0, 0, 0, 1};
+
 
         now := seconds_since_init();
         t := cos(cast(float) now) * .5 + .5;
@@ -200,7 +194,7 @@ record_buffers :: (r:*fwdpp_r) {
 	viewport.maxDepth = 1;
     vkCmdSetViewport(r.pipeline.g_Pipeline.commandBuffers[index], 0, 1, *r.pipeline.g_Pipeline.viewport);
 
-    vkCmdDraw(r.pipeline.g_Pipeline.commandBuffers[index], 3, 1, 0, 0);
+    vkCmdDraw(r.pipeline.g_Pipeline.commandBuffers[index], 6, 1, 0, 0);
     
     vkCmdEndRendering(commandBuffers[index]);
 
