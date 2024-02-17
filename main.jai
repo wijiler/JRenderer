@@ -13,6 +13,13 @@ get_frame_time :: () {
     //print("framerate:%\n",framerate);
 } @UPDATE
 
+handle_input :: () {
+    for input: inputs_this_frame {
+        if input == xx Key_Code.ESCAPE {
+            winf.quitting = true;
+        }
+    }
+} @UPDATE
 
 
 main :: () {
@@ -31,3 +38,4 @@ main :: () {
     exit(1);
 }
 #import "Random";
+#import "Input";

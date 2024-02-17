@@ -1,14 +1,9 @@
 #run build();
 
-zlib_h_loc :: "source/opennurbs/zlib/zlib.h";
-lib_h_loc :: "source/opennurbs/opennurbs.h";
-freetype_h_loc :: "source/opennurbs/freetype263/include/ft2build.h";
-
 build :: () {
     set_build_options_dc(.{do_output=false});
 
     options := get_build_options();
-    build_cpp_dynamic_lib("opennurbs","source/opennurbs/opennurbs_dll.cpp");
     if !generator() {
         compiler_set_workspace_status(.FAILED);
         return;
@@ -26,21 +21,22 @@ generator :: () -> bool {
         array_add(*system_include_paths, GENERATOR_DEFAULT_SYSTEM_INCLUDE_PATH);
         array_add(*extra_clang_arguments,
         "-Wall",
-	    "-Wno-overloaded-virtual",
-	    "-Wno-switch",
-	    "-Wno-unknown-pragmas",
-	    "-Wno-unused-private-field",
-        "-D_GNU_SOURCE",
+        "-Wextra",
         "-std=c++17",
         "-x",
         "c++");
 
         array_add(*libpaths,".");
-        array_add(*libnames,"opennurbs");
-        array_add(*include_paths,"source/opennurbs/");
-        array_add(*include_paths,"source/opennurbs/zlib/");
-        array_add(*include_paths,"source/opennurbs/freetype263/include/freetype/");
-        array_add(*source_files,lib_h_loc);
+        array_add(*libnames,"lib3mf");
+        array_add(*libnames,"zlib");
+        
+        array_add(*source_files,"source/CppDynamic/lib3mf_dynamic.h");
+        array_add(*source_files,"source/CppDynamic/lib3mf_dynamic.hpp");
+        array_add(*source_files,"source/CppDynamic/lib3mf_abi.hpp");
+        array_add(*source_files,"source/CppDynamic/lib3mf_types.hpp");
+
+
+
         //array_add(*source_files,zlib_h_loc);
         //array_add(*source_files,freetype_h_loc);
 

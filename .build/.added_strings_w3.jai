@@ -1,8 +1,9 @@
 // Workspace: jCAD debug
-Update :: () {
+Update :: () #expand {
+handle_input();
 get_frame_time();
 }
-Start :: () {
+Start :: () #expand {
 Init();
 }
 
@@ -12,11 +13,11 @@ Init();
             if it.type == .QUIT then `info.quitting = true;
 
             if it.type == .KEYBOARD {
-                array_add(*`inputs_this_frame,it.key_code);
+                array_add(*`inputs_this_frame,xx it.key_code);
             }
-            array_reset(*`inputs_this_frame);
         }
         //draw(*rend);
         Update();
+        array_reset(*`inputs_this_frame);
     }
 #import "Input";

@@ -40,7 +40,7 @@ draw_frame :: (r:*fwdpp_r,bg:Vector4) {
     vkQueuePresentKHR(r.pipeline.pQueue, *presentInfo);
     end := seconds_since_init();
 
-    print("delta:%\nframerate:%\n", end - begin,frame_index/begin);
+    //print("delta:%\nframerate:%\n", end - begin,frame_index/begin);
 }
 
 

@@ -1,6 +1,6 @@
 #load "renderer.jai";
 
-inputs_this_frame:[..] Key_Code;
+inputs_this_frame:[..] u32;
 
 
 rend:fwdpp_r;
@@ -37,12 +37,12 @@ LoopFunc :: #string END
             if it.type == .QUIT then `info.quitting = true;
 
             if it.type == .KEYBOARD {
-                array_add(*`inputs_this_frame,it.key_code);
+                array_add(*`inputs_this_frame,xx it.key_code);
             }
-            array_reset(*`inputs_this_frame);
         }
         //draw(*rend);
         Update();
+        array_reset(*`inputs_this_frame);
     }
 #import "Input";
 END
@@ -85,12 +85,12 @@ message :: (w:Workspace) #expand {
 
 generate_code :: () -> string #expand {
                 Builder:String_Builder;
-                append(*Builder,"Update :: () {\n");
+                append(*Builder,"Update :: () #expand {\n");
                 for fname: u_funcs {
                         append(*Builder,sprint("%();\n",fname));
                 }
                 append(*Builder,"}\n");
-                append(*Builder,"Start :: () {\n");
+                append(*Builder,"Start :: () #expand {\n");
                 for fname: s_funcs {
                         append(*Builder,sprint("%();\n",fname));
                 }

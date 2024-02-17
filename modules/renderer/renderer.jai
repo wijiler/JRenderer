@@ -701,8 +701,10 @@ Mesh :: struct {
     vertexLoc:VkDeviceAddress;
 }
 
-load_mesh :: (r:*fwdpp_r) -> Mesh {
+load_mesh :: (r:*fwdpp_r,filename:string) -> Mesh {
     model:Mesh;
+
+    
 
     alloc_buffers();
     
@@ -732,3 +734,5 @@ alloc_buffers :: (bytes:u64,use:bufferUsage,r:*fwdpp_r) ->  buffer {
 #import "Basic";
 #load "util.jai";
 #load "drawing.jai";
+lib3mf :: #import "lib3mf";
+//NURBS :: #import "openNurbs";
