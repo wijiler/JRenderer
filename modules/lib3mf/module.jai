@@ -5077,6 +5077,10 @@ lib3mf_resource_getmodelresourceid :: (pResource: Lib3MF_Resource, pModelResourc
 */
 lib3mf_resourceiterator_movenext :: (pResourceIterator: Lib3MF_ResourceIterator, pHasNext: *bool) -> Lib3MFResult #foreign lib3mf;
 
+lib3mf_objectiterator_movenext :: (pObjectIterator: Lib3MF_ResourceIterator, pHasNext: *bool) -> Lib3MFResult {
+    return lib3mf_resourceiterator_movenext(pObjectIterator,pHasNext);
+}
+
 /**
 * Iterates to the previous resource in the list.
 *

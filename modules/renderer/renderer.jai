@@ -704,7 +704,7 @@ Mesh :: struct {
 load_mesh :: (r:*fwdpp_r,filename:string) -> Mesh {
     model:Mesh;
 
-    
+    load_3mf(filename);
 
     alloc_buffers();
     
@@ -734,5 +734,5 @@ alloc_buffers :: (bytes:u64,use:bufferUsage,r:*fwdpp_r) ->  buffer {
 #import "Basic";
 #load "util.jai";
 #load "drawing.jai";
-lib3mf :: #import "lib3mf";
+#load "loading.jai";
 //NURBS :: #import "openNurbs";
