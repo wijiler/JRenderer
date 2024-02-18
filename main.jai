@@ -2,6 +2,7 @@ winf:winfo_t;
 
 
 Init :: () {
+    load_3mf("./cylinder.3mf");
     rend = init_renderer(winf);
 } @START
 I:int = 0;
