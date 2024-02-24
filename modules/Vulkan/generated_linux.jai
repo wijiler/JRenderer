@@ -3243,6 +3243,7 @@ VkBufferUsageFlagBits :: enum_flags u32 {
     INDIRECT_BUFFER_BIT           :: 0x100;
     CONDITIONAL_RENDERING_BIT_EXT :: 0x200;
     RAYTRACING_BIT_NVX            :: 0x400;
+    SHADER_DEVICE_ADDRESS_BIT :: 0x00020000;
     FLAG_BITS_MAX_ENUM            :: 0x7fffffff;
 
     VK_BUFFER_USAGE_TRANSFER_SRC_BIT              :: TRANSFER_SRC_BIT;
@@ -5264,6 +5265,7 @@ VkPeerMemoryFeatureFlags :: VkPeerMemoryFeatureFlagBits;
 VkMemoryAllocateFlagBits :: enum_flags u32 {
     DEVICE_MASK_BIT     :: 0x1;
     DEVICE_MASK_BIT_KHR :: 0x1;
+    DEVICE_ADDRESS_BIT :: 0x2,
     FLAG_BITS_MAX_ENUM  :: 0x7fffffff;
 
     VK_MEMORY_ALLOCATE_DEVICE_MASK_BIT     :: DEVICE_MASK_BIT;

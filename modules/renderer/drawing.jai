@@ -1,6 +1,8 @@
 deviceWait :: (r:fwdpp_r) {
     vkDeviceWaitIdle(r.pipeline.lDevice);
 }
+#placeholder Submit;
+
 
 draw_frame :: (r:*fwdpp_r,bg:Vector4) {
     begin := seconds_since_init();
@@ -10,6 +12,7 @@ draw_frame :: (r:*fwdpp_r,bg:Vector4) {
 
     frame_index += 1;
     index := frame_index % FRAME_COUNT;
+    cmdIndex = frame_index % FRAME_COUNT;
 
     vkWaitForFences(r.pipeline.lDevice, 1, *frameFences[index], VK_TRUE, U64_MAX);
     vkResetFences(r.pipeline.lDevice, 1, *frameFences[index]);
@@ -56,6 +59,8 @@ imageAvailableSemaphores: [FRAME_COUNT]VkSemaphore;
 renderFinishedSemaphores: [FRAME_COUNT]VkSemaphore;
 
 #scope_module
+
+cmdIndex:s64;
 
 attachment_info :: (view:VkImageView,clear:*VkClearValue ,layout:VkImageLayout) -> VkRenderingAttachmentInfo
 {
@@ -172,6 +177,11 @@ record_buffers :: (r:*fwdpp_r) {
     cAttInfo:VkRenderingAttachmentInfo = attachment_info(r.pipeline.ImageViews[imageIndex],null,.VK_IMAGE_LAYOUT_GENERAL);
     renInf:VkRenderingInfo = rendering_info(r.pipeline.Extent,*cAttInfo,null);
 
+    Submit();
+    if frame_index < 1 {
+    Copy_bufs(r);
+    }
+
     vkCmdBeginRendering(r.pipeline.g_Pipeline.commandBuffers[index],*renInf);
 
 
@@ -193,6 +203,17 @@ record_buffers :: (r:*fwdpp_r) {
 	viewport.minDepth = 0;
 	viewport.maxDepth = 1;
     vkCmdSetViewport(r.pipeline.g_Pipeline.commandBuffers[index], 0, 1, *r.pipeline.g_Pipeline.viewport);
+
+    world:World;
+    world.transform = .{
+	    		1,1,1,1,
+    			1,1,1,1,
+			1,1,1,1,
+			1,1,1,1,
+			};
+    world.vertexBuffer = r.mesh.vertexLoc;
+
+    
 
     vkCmdDraw(r.pipeline.g_Pipeline.commandBuffers[index], 6, 1, 0, 0);
     
@@ -251,7 +272,6 @@ init_cbuf :: (gpLine:*fwdpp_r) {
     gpLine.pipeline.g_Pipeline.sync.inFlight = frameFences;
     gpLine.pipeline.g_Pipeline.sync.imageAvailable = imageAvailableSemaphores;
     gpLine.pipeline.g_Pipeline.sync.renderFinished = renderFinishedSemaphores;
-
-    print("Created command buffers");
+    log(.Info, "Created command buffers\n");
 }
 #import "Vulkan";

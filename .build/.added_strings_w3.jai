@@ -6,6 +6,8 @@ get_frame_time();
 Start :: () #expand {
 Init();
 }
+Submit :: () #expand {
+}
 
     loop :: () #expand {
         update_window_events();

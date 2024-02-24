@@ -15,6 +15,9 @@ Vk_Pipeline :: struct {
     g_Pipeline:graphics_pipeline;
 }
 
+#add_context vbufsize:int = 0;
+#add_context ibufsize:int = 0;
+#add_context staging_buffer:buffer = .{};
 
 // foward ++ renderer
 fwdpp_r :: struct {
@@ -28,21 +31,64 @@ init_renderer :: (win:winfo_t) -> fwdpp_r {
     r.pipeline = init_vk(win);
 
     get_image_views(*r.pipeline);
+    
+    
 
     create_g_pipeline(*r);
 
     return r;
 }
 
+load_mesh :: (r:*fwdpp_r,modelInf:MFFP_parser) {
+    verts:[] Vertex;
+    pos:[] float;
+    indices:[] [3] u64;
+    // we need to switch how we handle data based on file
+    if modelInf.type=={
+        case .P_3MF;
+        normalized:[] float = normalize_array_vectors(r.pipeline.Extent,modelInf.vertex_data);
+        vecs := buffer_2_vec(normalized);
+	pos = normalized;
+        verts = NewArray(vecs.count,Vertex);
+        for 0..vecs.count - 1 {
+            verts[it].pos = vecs[it];
+        }
+        indices = NewArray(modelInf.triangle_data.count / 3,[3] u64);
+        for 0..(modelInf.triangle_data.count / 3) - 1 {
+            indices[it][0] = modelInf.triangle_data[it * 3];
+            indices[it][1] = modelInf.triangle_data[(it * 3) + 1];
+            indices[it][2] = modelInf.triangle_data[(it * 3) + 2];
+	    it += 3;
+        }
+        case;;
+    }
+    vbufsize := verts.count * size_of(Vertex);
+    ibufsize := indices.count * size_of([3] u64);
+    mesh:Mesh;
+    mesh.vertexBuf = alloc_buffers(xx vbufsize,.STORAGE_BUFFER_BIT | .TRANSFER_DST_BIT | .SHADER_DEVICE_ADDRESS_BIT,r,.GPU_ONLY);
+    devAddrInfo:VkBufferDeviceAddressInfo = .{};
+    devAddrInfo.buffer = mesh.vertexBuf.vBuffer;
 
+    mesh.vertexLoc = vkGetBufferDeviceAddress(r.pipeline.lDevice,*devAddrInfo);
+    
+    mesh.indexBuf = alloc_buffers(xx ibufsize, .VK_BUFFER_USAGE_INDEX_BUFFER_BIT | .VK_BUFFER_USAGE_TRANSFER_DST_BIT,r,.GPU_ONLY);
+     
+    staging_buffer := alloc_buffers(xx (vbufsize + ibufsize), .VK_BUFFER_USAGE_TRANSFER_SRC_BIT,r,.CPU_ONLY);
+
+    data := staging_buffer.mem;
+    mcpy_bufs(pos,data); 
+    mcpy_bufs(modelInf.triangle_data,data);
+    r.mesh = mesh; 
+    context.ibufsize = ibufsize;
+    context.vbufsize = vbufsize;
+    context.staging_buffer = staging_buffer;
+}
 cleanup :: (r:fwdpp_r) {
     vkDestroySwapchainKHR(r.pipeline.lDevice,r.pipeline.sChain,null);
     for view: r.pipeline.ImageViews {
         vkDestroyImageView(r.pipeline.lDevice,view,null);
     }
-    // for fb: r.pipeline.g_Pipeline.fbuffers {
-    //     vkDestroyFramebuffer(r.pipeline.lDevice,fb,null);
-    // }
+
     vkDestroySemaphore(r.pipeline.lDevice,r.pipeline.g_Pipeline.sync.imageAvailable[0],null);
     vkDestroySemaphore(r.pipeline.lDevice,r.pipeline.g_Pipeline.sync.renderFinished[0],null);
     vkDestroyFence(r.pipeline.lDevice,r.pipeline.g_Pipeline.sync.inFlight[0],null);
@@ -55,12 +101,32 @@ cleanup :: (r:fwdpp_r) {
     vkDestroyPipelineLayout(r.pipeline.lDevice, r.pipeline.g_Pipeline.plLayout, null);
     vkDestroyShaderModule(r.pipeline.lDevice,r.pipeline.g_Pipeline.mainshaders[0],null);
     vkDestroyShaderModule(r.pipeline.lDevice,r.pipeline.g_Pipeline.mainshaders[1],null);
-    //vkDestroyRenderPass(r.pipeline.lDevice, r.pipeline.g_Pipeline.rpass, null);
+    
     vkDestroyDevice(r.pipeline.lDevice,null);
     vkDestroyInstance(r.pipeline.inst,null);
 }
 
 #scope_module
+Copy_bufs :: (r:fwdpp_r) {
+	vbufcopy:VkBufferCopy = .{};
+	vbufcopy.dstOffset = 0;
+	vbufcopy.srcOffset = 0;
+	vbufcopy.size = xx context.vbufsize;	
+
+	vkCmdCopyBuffer(r.pipeline.g_Pipeline.commandBuffers[cmdIndex],context.staging_buffer.vBuffer,r.mesh.vertexBuf.vBuffer,1,*vbufcopy);
+
+	ibufcopy:VkBufferCopy = .{};
+	ibufcopy.dstOffset = 0;
+	ibufcopy.srcOffset = 0;
+	ibufcopy.size = xx context.ibufsize;	
+
+	vkCmdCopyBuffer(r.pipeline.g_Pipeline.commandBuffers[cmdIndex],context.staging_buffer.vBuffer,r.mesh.indexBuf.vBuffer,1,*ibufcopy);
+	print("alright\n");
+        vkDestroyBuffer(r.pipeline.lDevice,context.staging_buffer.vBuffer,null);
+	print("alright\n");
+}
+
+
 device_extensions:[] *u8 = .[
     VK_KHR_SWAPCHAIN_EXTENSION_NAME.data,
     VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME.data,
@@ -74,7 +140,7 @@ device_extensions:[] *u8 = .[
     extensions:[] *u8 = .[
         VK_KHR_SURFACE_EXTENSION_NAME.data,
         VK_KHR_WIN32_SURFACE_EXTENSION_NAME.data,
-        //VK_EXT_DEBUG_UTILS_EXTENSION_NAME.data,
+        VK_EXT_DEBUG_UTILS_EXTENSION_NAME.data,
     ];
 
 }
@@ -279,57 +345,6 @@ create_g_pipeline :: (r:*fwdpp_r) {
 }
 
 
-// deprecated
-// create_render_passes :: (r:*fwdpp_r) -> VkRenderPass {
-//     cAtt:VkAttachmentDescription = .{};
-//     cAtt.format = r.pipeline.Format;
-//     cAtt.samples = .VK_SAMPLE_COUNT_1_BIT;
-//     cAtt.loadOp = .VK_ATTACHMENT_LOAD_OP_CLEAR;
-//     cAtt.storeOp = .VK_ATTACHMENT_STORE_OP_STORE;
-//     cAtt.stencilLoadOp = .VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-//     cAtt.stencilStoreOp = .VK_ATTACHMENT_STORE_OP_DONT_CARE;
-//     cAtt.initialLayout = .VK_IMAGE_LAYOUT_UNDEFINED;
-//     cAtt.finalLayout = .TRANSFER_DST_OPTIMAL;
-
-//     cAttRef:VkAttachmentReference = .{};
-//     cAttRef.attachment = 0;
-//     cAttRef.layout = .VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-//     subpass:VkSubpassDescription = .{};
-//     subpass.pipelineBindPoint = .VK_PIPELINE_BIND_POINT_GRAPHICS;
-//     subpass.colorAttachmentCount = 1;
-//     subpass.pColorAttachments = *cAttRef;
-
-//     renderpass:VkRenderPass;
-//     rPassCinfo:VkRenderPassCreateInfo = .{};
-
-//     rPassCinfo.attachmentCount = 1;
-//     rPassCinfo.pAttachments = *cAtt;
-//     rPassCinfo.subpassCount = 1;
-//     rPassCinfo.pSubpasses = *subpass;
-
-//     sDependency:VkSubpassDependency = .{};
-//     sDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-//     sDependency.dstSubpass = 0;
-
-//     sDependency.srcStageMask = .VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-//     sDependency.srcAccessMask = 0;
-//     sDependency.dstStageMask = .VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-//     sDependency.dstAccessMask = .VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-//     rPassCinfo.dependencyCount = 1;
-//     rPassCinfo.pDependencies = *sDependency;
-
-//     result := vkCreateRenderPass(r.pipeline.lDevice,*rPassCinfo,null,*renderpass);
-//     if result != .VK_SUCCESS {
-//         log(.Error,sprint("could not create render pass %\n",result));
-//     }
-//     log(.Info,"set up rendererpasses\n");
-
-
-//     return renderpass;
-// }
-
 get_image_views :: (pipeline:*Vk_Pipeline) {
     pipeline.ImageViews = NewArray(pipeline.imgs.count,VkImageView);
     for 0..pipeline.imgs.count - 1 {
@@ -457,6 +472,11 @@ init_vk :: (win:winfo_t) -> Vk_Pipeline {
     enabledynRend.dynamicRendering = VK_TRUE;
     enabledynRend.synchronization2 = VK_TRUE;
 
+    enabledevADDR:VkPhysicalDeviceVulkan12Features;
+    enabledevADDR.bufferDeviceAddress = VK_TRUE;
+    enabledevADDR.descriptorIndexing  = VK_TRUE;
+
+    enabledynRend.pNext = *enabledevADDR;
 
     ldCreateInfo:VkDeviceCreateInfo = .{};
     ldCreateInfo.pNext = *enabledynRend;
@@ -676,16 +696,10 @@ choose_schain_settings :: (formats:[] VkSurfaceFormatKHR,modes:[..] VkPresentMod
 
 buffer :: struct {
     vBuffer:VkBuffer;
-    type:bufferUsage;
-    
+    mem:*void;
+    type:VkBufferUsageFlags;
 }
 
-bufferUsage :: enum u32 {
-    UNIFORM :: VkBufferUsageFlagBits.UNIFORM_BUFFER_BIT; // NOTE: when using this memory is read-only this also is a small buffer
-    STORAGE :: VkBufferUsageFlagBits.STORAGE_BUFFER_BIT;
-    VERTEX :: VkBufferUsageFlagBits.VERTEX_BUFFER_BIT;
-    INDEX :: VkBufferUsageFlagBits.INDEX_BUFFER_BIT;
-}
 
 
 Vertex :: struct {
@@ -701,32 +715,93 @@ Mesh :: struct {
     vertexLoc:VkDeviceAddress;
 }
 
-load_mesh :: (r:*fwdpp_r,filename:string) -> Mesh {
-    model:Mesh;
-
-    load_3mf(filename);
-
-    alloc_buffers();
-    
+World :: struct {
+    transform:Matrix4;
+    vertexBuffer:VkDeviceAddress;
 }
 
-alloc_buffers :: (bytes:u64,use:bufferUsage,r:*fwdpp_r) ->  buffer {
-    #assert(bytes >= 128000 && bytes <= U32_MAX);
+memtype :: enum {
+	GPU_ONLY;
+	CPU_ONLY;
+}
+
+alloc_buffers :: (size:u64,use:VkBufferUsageFlags,r:*fwdpp_r,memory:memtype) ->  buffer {
 
     buf:buffer;
 
     bufferCI:VkBufferCreateInfo = .{};
-
-    bufferCI.size = bytes;
-    bufferCI.usage = xx bufferUsage;
+    
+    bufferCI.size = size; 
+    bufferCI.usage = xx use;
     bufferCI.sharingMode = .EXCLUSIVE; // we want to ensure no shenanigans happen
 
     vkCreateBuffer(r.pipeline.lDevice,*bufferCI,null,*buf.vBuffer);
     buf.type = use;
 
+    memprops:VkPhysicalDeviceMemoryProperties;
+
+    vkGetPhysicalDeviceMemoryProperties(r.pipeline.pDevice,*memprops);
+    index:u32;
+    if memory== {
+    	case .GPU_ONLY; index = find_gpu_only_mem(memprops);
+	case .CPU_ONLY; index = find_cpu_only_mem(memprops);
+    }
+    allocInfo:VkMemoryAllocateInfo = .{};
+
+    vkMemReq:VkMemoryRequirements = .{};
+    vkGetBufferMemoryRequirements(r.pipeline.lDevice,buf.vBuffer,*vkMemReq);
+
+    flags:VkMemoryAllocateFlagsInfo = .{};
+
+    flags.flags = 0x2;
+
+    allocInfo.allocationSize = size + vkMemReq.alignment;
+    allocInfo.memoryTypeIndex = index;
+    allocInfo.pNext = *flags;
+    devMem:VkDeviceMemory;
+
+    vkAllocateMemory(r.pipeline.lDevice,*allocInfo,null,*devMem);
+
+
+    offset:u64 = 0;
+
+    vkBindBufferMemory(r.pipeline.lDevice,buf.vBuffer,devMem,offset);
+
     return buf;
 }
 
+mcpy_bufs :: (src:[] float, dest:*void) {
+	if dest == null {
+		dest = alloc(size_of(float) * src.count);
+	}
+	
+	memcpy(dest,src.data,src.count);
+}
+mcpy_bufs :: (src:[] u64, dest:*void) {
+	if dest == null {
+		dest = alloc(size_of(u64) * src.count);
+	}
+	
+	memcpy(dest,src.data,src.count);
+}
+
+find_gpu_only_mem :: (memProps:VkPhysicalDeviceMemoryProperties) -> u32 {
+        for 0..31 {
+		if memProps.memoryTypes[it].propertyFlags  == .DEVICE_LOCAL_BIT  { return xx it; }
+        }
+        print("no_local_bits\n");
+        return 0;
+}
+
+
+find_cpu_only_mem :: (memProps:VkPhysicalDeviceMemoryProperties) -> u32 {
+	for 0..31 {
+		if memProps.memoryTypes[it].propertyFlags == .HOST_COHERENT_BIT | .HOST_VISIBLE_BIT then return xx it;
+	}
+        print("no_host_bits\n");
+	return 0;
+
+}
 
 #load "log.jai";
 #import "Vulkan";
@@ -734,5 +809,5 @@ alloc_buffers :: (bytes:u64,use:bufferUsage,r:*fwdpp_r) ->  buffer {
 #import "Basic";
 #load "util.jai";
 #load "drawing.jai";
-#load "loading.jai";
-//NURBS :: #import "openNurbs";
+#import "mffp";
+#import "Compiler";

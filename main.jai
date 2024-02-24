@@ -2,13 +2,15 @@ winf:winfo_t;
 
 
 Init :: () {
-    load_3mf("./cylinder.3mf");
+    model := parse_3mf("./cylinder.3mf");
     rend = init_renderer(winf);
+    load_mesh(*rend,model);
 } @START
 I:int = 0;
 framerate:int;
 get_frame_time :: () {
     draw_frame(*rend,Vector4.{1.0,0.12,1.0,1.0});
+    
     // I += 1;
     // framerate = cast(int) (I/seconds_since_init());
     //print("framerate:%\n",framerate);
@@ -40,3 +42,4 @@ main :: () {
 }
 #import "Random";
 #import "Input";
+#import "mffp";

@@ -1,4 +1,5 @@
 #load "renderer.jai";
+#load "Vector.jai";
 
 inputs_this_frame:[..] u32;
 
@@ -30,6 +31,8 @@ build_loop :: (w:Workspace) {
 }
 #scope_module
 
+
+
 LoopFunc :: #string END
     loop :: () #expand {
         update_window_events();
@@ -49,6 +52,7 @@ END
 
 u_funcs: [..] string;
 s_funcs: [..] string;
+sub_funcs: [..] string;
 
 message :: (w:Workspace) #expand {
         while true {
@@ -62,11 +66,14 @@ message :: (w:Workspace) #expand {
                                 continue;
                         }
                 for note: decl.expression.notes {
-                        if note.text == "UPDATE" {
-                                array_add(*u_funcs, copy_string(decl.expression.name));
-                        }
-                        else if note.text == "START" {
-                                array_add(*s_funcs, copy_string(decl.expression.name));
+                        if note.text =={
+				case "UPDATE";
+       		                         array_add(*u_funcs, copy_string(decl.expression.name));
+				case "START";
+					array_add(*s_funcs, copy_string(decl.expression.name));
+				case "SUBMIT";
+					array_add(*sub_funcs,copy_string(decl.expression.name));
+				case;;
                         }
                    }
                 }
@@ -95,9 +102,16 @@ generate_code :: () -> string #expand {
                         append(*Builder,sprint("%();\n",fname));
                 }
                 append(*Builder,"}\n");
+
+                append(*Builder,"Submit :: () #expand {\n");
+		for fname: sub_funcs  {
+			append(*Builder,sprint("%();\n",fname));
+		}
+                append(*Builder,"}\n");
                 return builder_to_string(*Builder);
 }
 
+ 
 DEBUG :: true;
 
 #import "Compiler";
