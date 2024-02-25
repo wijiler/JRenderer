@@ -1,16 +1,34 @@
 
 // specifically meant for 3mf's 
-normalize_array_vectors :: (extent:VkExtent2D,array:[] float) -> [] float {
-    arr := array;
-    for 0..arr.count - 1 {
-        if it % 2 == 0
-            arr[it] /= extent.height; 
-        else if it % 3 == 0 
-            continue;
-        else
-            arr[it] /= extent.width;
+// normalize_array_vectors :: (extent:VkExtent2D,array:[] float) -> [] float {
+//     arr := array;
+//     for 0..arr.count - 1 {
+//         if it % 2 == 0
+//             arr[it] /= extent.height; 
+//         else if it % 3 == 0 
+//             continue;
+//         else
+//             arr[it] /= extent.width;
+//     }
+//     return arr;
+// }
+
+normalize_vec3_arr :: (arr:[] Vector3) -> [] Vector3 {
+    vecs:[..] Vector3;
+    for vec:arr {
+        array_add(*vecs,normalize(vec));
     }
-    return arr;
+    return vecs;
+}
+
+vec_2_buf :: (arr:[] Vector3) -> [] float {
+    pos:[..] float;
+    for vec:arr {
+        array_add(*pos,vec.x);
+        array_add(*pos,vec.y);
+        array_add(*pos,vec.z);
+    }
+    return pos;
 }
 
 buffer_2_vec :: (buf:[] float) -> [] Vector3 {
@@ -27,3 +45,4 @@ buffer_2_vec :: (buf:[] float) -> [] Vector3 {
 }
 
 #import "Vulkan";
+#import "Math";

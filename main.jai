@@ -2,9 +2,10 @@ winf:winfo_t;
 
 
 Init :: () {
-    model := parse_3mf("./cylinder.3mf");
+    model := parse_3mf("assets/box.3mf");
     rend = init_renderer(winf);
     load_mesh(*rend,model);
+    print("%\n",rend);
 } @START
 I:int = 0;
 framerate:int;

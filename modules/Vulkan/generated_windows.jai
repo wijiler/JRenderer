@@ -10528,6 +10528,7 @@ VkDeviceGroupSwapchainCreateInfoKHR :: struct {
     modes: VkDeviceGroupPresentModeFlagsKHR;
 }
 
+
 PFN_vkCreateSwapchainKHR :: #type (device: VkDevice, pCreateInfo: *VkSwapchainCreateInfoKHR, pAllocator: *VkAllocationCallbacks, pSwapchain: *VkSwapchainKHR) -> VkResult #c_call;
 PFN_vkDestroySwapchainKHR :: #type (device: VkDevice, swapchain: VkSwapchainKHR, pAllocator: *VkAllocationCallbacks) -> void #c_call;
 PFN_vkGetSwapchainImagesKHR :: #type (device: VkDevice, swapchain: VkSwapchainKHR, pSwapchainImageCount: *u32, pSwapchainImages: *VkImage) -> VkResult #c_call;
@@ -16600,6 +16601,7 @@ VkVertexInputAttributeDescription2EXT :: struct {
 }
 
 PFN_vkCmdSetVertexInputEXT :: #type (commandBuffer: VkCommandBuffer, vertexBindingDescriptionCount: u32, pVertexBindingDescriptions: *VkVertexInputBindingDescription2EXT, vertexAttributeDescriptionCount: u32, pVertexAttributeDescriptions: *VkVertexInputAttributeDescription2EXT) -> void #c_call;
+
 
 VkPhysicalDeviceDrmPropertiesEXT :: struct {
     sType:        VkStructureType = .PHYSICAL_DEVICE_DRM_PROPERTIES_EXT;

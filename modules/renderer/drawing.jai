@@ -21,7 +21,7 @@ draw_frame :: (r:*fwdpp_r,bg:Vector4) {
     record_buffers(r);
 
 
-    submitInfo: VkSubmitInfo; 
+    submitInfo: VkSubmitInfo = .{}; 
     submitInfo.waitSemaphoreCount   = 1;
     submitInfo.pWaitSemaphores      = *imageAvailableSemaphores[index];
     submitInfo.pWaitDstStageMask    = VkPipelineStageFlags.[.COLOR_ATTACHMENT_OUTPUT_BIT].data;
@@ -33,7 +33,7 @@ draw_frame :: (r:*fwdpp_r,bg:Vector4) {
 
 
     // Present.
-    presentInfo: VkPresentInfoKHR;
+    presentInfo: VkPresentInfoKHR = .{};
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores    = *renderFinishedSemaphores[index];
     presentInfo.swapchainCount     = 1;
@@ -60,6 +60,9 @@ renderFinishedSemaphores: [FRAME_COUNT]VkSemaphore;
 
 #scope_module
 
+pfn_vkCmdSetVertexInputEXT:() -> () #c_call; 
+vkCmdSetVertexInputEXT:PFN_vkCmdSetVertexInputEXT ;
+world:World;
 cmdIndex:s64;
 
 attachment_info :: (view:VkImageView,clear:*VkClearValue ,layout:VkImageLayout) -> VkRenderingAttachmentInfo
@@ -99,7 +102,6 @@ rendering_info :: (renderExtent:VkExtent2D,  colorAttachment:*VkRenderingAttachm
     renderInfo:VkRenderingInfo  = .{};
     renderInfo.sType = .VK_STRUCTURE_TYPE_RENDERING_INFO;
     renderInfo.pNext = null;
-
     renderInfo.renderArea = VkRect2D.{ VkOffset2D.{ 0, 0 }, renderExtent };
     renderInfo.layerCount = 1;
     renderInfo.colorAttachmentCount = 1;
@@ -120,11 +122,11 @@ record_buffers :: (r:*fwdpp_r) {
 
     vkResetCommandBuffer(commandBuffers[index],0);
 
-    beginInfo: VkCommandBufferBeginInfo;
+    beginInfo: VkCommandBufferBeginInfo = .{};
     beginInfo.flags = .ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(commandBuffers[index], *beginInfo);
 
-    subResourceRange : VkImageSubresourceRange;
+    subResourceRange : VkImageSubresourceRange = .{};
     {
         using subResourceRange;
         aspectMask     = .COLOR_BIT;
@@ -134,7 +136,7 @@ record_buffers :: (r:*fwdpp_r) {
         layerCount     = VK_REMAINING_ARRAY_LAYERS;
     }
     // Change layout of image to be optimal for clearing
-    imgMemoryBarrier : VkImageMemoryBarrier;
+    imgMemoryBarrier : VkImageMemoryBarrier = .{};
     {
         using imgMemoryBarrier;
         srcAccessMask       = 0;
@@ -150,7 +152,7 @@ record_buffers :: (r:*fwdpp_r) {
     vkCmdPipelineBarrier(commandBuffers[index], .TRANSFER_BIT, .TRANSFER_BIT, 
                          0, 0, null, 0, null, 1, *imgMemoryBarrier);
 
-    clearColor : VkClearColorValue;
+    clearColor : VkClearColorValue = .{};
     {
 
 
@@ -178,7 +180,7 @@ record_buffers :: (r:*fwdpp_r) {
     renInf:VkRenderingInfo = rendering_info(r.pipeline.Extent,*cAttInfo,null);
 
     Submit();
-    if frame_index < 1 {
+    if frame_index == 1 {
     Copy_bufs(r);
     }
 
@@ -204,23 +206,50 @@ record_buffers :: (r:*fwdpp_r) {
 	viewport.maxDepth = 1;
     vkCmdSetViewport(r.pipeline.g_Pipeline.commandBuffers[index], 0, 1, *r.pipeline.g_Pipeline.viewport);
 
-    world:World;
-    world.transform = .{
-	    		1,1,1,1,
-    			1,1,1,1,
-			1,1,1,1,
-			1,1,1,1,
-			};
-    world.vertexBuffer = r.mesh.vertexLoc;
+     
+    posbufferDesc:VkVertexInputBindingDescription2EXT = .{}; 
 
+
+    posbufferDesc.binding = 0;
+    posbufferDesc.stride = size_of(float) * 3;
+    posbufferDesc.inputRate = 0; // vertex
+    posbufferDesc.divisor = 1;
     
+    posAttrDesc:VkVertexInputAttributeDescription2EXT = .{};
 
-    vkCmdDraw(r.pipeline.g_Pipeline.commandBuffers[index], 6, 1, 0, 0);
+
+    posAttrDesc.location = 0;
+    posAttrDesc.binding = 0;
+    posAttrDesc.offset = 0;
+    posAttrDesc.format = .VK_FORMAT_R32G32B32_SFLOAT ;
+
+
+    vkCmdSetVertexInputEXT(r.pipeline.g_Pipeline.commandBuffers[index],1,*posbufferDesc,1,*posAttrDesc);
+
+
+    offset:u64 = 0;
+
+    world.transform = .{1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
+
+    view:Matrix4 = translate(world.transform,Vector3.{0,0,-.5});
+
+    projection:Matrix4 = perspective(1.22173,xx ( r.pipeline.Extent.width / r.pipeline.Extent.height ),1000,.1); 
+    world.transform = view * projection; 
+    //print("%\n",world.transform);
+	
+    
+    vkCmdPushConstants(r.pipeline.g_Pipeline.commandBuffers[index],r.pipeline.g_Pipeline.plLayout,.VK_SHADER_STAGE_VERTEX_BIT,0, size_of(World), *world); 
+    vkCmdBindVertexBuffers(r.pipeline.g_Pipeline.commandBuffers[index],0,1,*r.mesh.vertexBuf.vBuffer,*offset);
+    vkCmdBindIndexBuffer(r.pipeline.g_Pipeline.commandBuffers[index],r.mesh.indexBuf.vBuffer,0,.VK_INDEX_TYPE_UINT32);
+
+    vkCmdDrawIndexed(r.pipeline.g_Pipeline.commandBuffers[index], xx r.mesh.vertCount, 1, 0, 0,0);
     
     vkCmdEndRendering(commandBuffers[index]);
 
     vkEndCommandBuffer(commandBuffers[index]);
 }
+//libvulkan :: #library "../Vulkan/win/libvulkan";
+
 
 
 // framebuffers :: (gpLine:*fwdpp_r) {
@@ -243,25 +272,25 @@ record_buffers :: (r:*fwdpp_r) {
 
 init_cbuf :: (gpLine:*fwdpp_r) {
 
-    commandPoolCreateInfo: VkCommandPoolCreateInfo;
+    commandPoolCreateInfo: VkCommandPoolCreateInfo = .{};
     commandPoolCreateInfo.flags            = .RESET_COMMAND_BUFFER_BIT;
     commandPoolCreateInfo.queueFamilyIndex = gpLine.pipeline.queueIndex;
     vkCreateCommandPool(gpLine.pipeline.lDevice, *commandPoolCreateInfo, null, *commandPool);
 
-    commandBufferAllocInfo: VkCommandBufferAllocateInfo;
+    commandBufferAllocInfo: VkCommandBufferAllocateInfo = .{};
     commandBufferAllocInfo.commandPool        = commandPool;
     commandBufferAllocInfo.level              = .PRIMARY;
     commandBufferAllocInfo.commandBufferCount = FRAME_COUNT;
 
     vkAllocateCommandBuffers(gpLine.pipeline.lDevice, *commandBufferAllocInfo, commandBuffers.data);
 
-    semaphoreCreateInfo: VkSemaphoreCreateInfo;
+    semaphoreCreateInfo: VkSemaphoreCreateInfo = .{};
     vkCreateSemaphore(gpLine.pipeline.lDevice, *semaphoreCreateInfo, null, *imageAvailableSemaphores[0]);
     vkCreateSemaphore(gpLine.pipeline.lDevice, *semaphoreCreateInfo, null, *imageAvailableSemaphores[1]);
     vkCreateSemaphore(gpLine.pipeline.lDevice, *semaphoreCreateInfo, null, *renderFinishedSemaphores[0]);
     vkCreateSemaphore(gpLine.pipeline.lDevice, *semaphoreCreateInfo, null, *renderFinishedSemaphores[1]);
 
-    fenceCreateInfo: VkFenceCreateInfo;
+    fenceCreateInfo: VkFenceCreateInfo = .{};
     fenceCreateInfo.flags = .SIGNALED_BIT;
 
     vkCreateFence(gpLine.pipeline.lDevice, *fenceCreateInfo, null, *frameFences[0]);

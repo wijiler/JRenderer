@@ -1,15 +1,15 @@
 // VK_RENDERER
 Vk_Pipeline :: struct {
-    inst: VkInstance;
+    inst: VkInstance = VK_NULL_HANDLE;
     pDevice: VkPhysicalDevice = VK_NULL_HANDLE;
     lDevice: VkDevice = VK_NULL_HANDLE;
-    gQueue: VkQueue;
-    pQueue: VkQueue;
+    gQueue: VkQueue = VK_NULL_HANDLE;
+    pQueue: VkQueue = VK_NULL_HANDLE;
     queueIndex:u32;
     surface: VkSurfaceKHR;
     sChain: VkSwapchainKHR = VK_NULL_HANDLE;
     imgs:[] VkImage;
-    Extent:VkExtent2D;
+    Extent:VkExtent2D = .{};
     Format:VkFormat;
     ImageViews:[] VkImageView;
     g_Pipeline:graphics_pipeline;
@@ -40,45 +40,41 @@ init_renderer :: (win:winfo_t) -> fwdpp_r {
 }
 
 load_mesh :: (r:*fwdpp_r,modelInf:MFFP_parser) {
-    verts:[] Vertex;
-    pos:[] float;
-    indices:[] [3] u64;
+    pfn_vkCmdSetVertexInputEXT = vkGetInstanceProcAddr(r.pipeline.inst,"vkCmdSetVertexInputEXT");
+    vkCmdSetVertexInputEXT = cast(PFN_vkCmdSetVertexInputEXT) pfn_vkCmdSetVertexInputEXT;
+    verts:[] float;
+    indices:[] u32;
     // we need to switch how we handle data based on file
     if modelInf.type=={
         case .P_3MF;
-        normalized:[] float = normalize_array_vectors(r.pipeline.Extent,modelInf.vertex_data);
-        vecs := buffer_2_vec(normalized);
-	pos = normalized;
-        verts = NewArray(vecs.count,Vertex);
-        for 0..vecs.count - 1 {
-            verts[it].pos = vecs[it];
-        }
-        indices = NewArray(modelInf.triangle_data.count / 3,[3] u64);
-        for 0..(modelInf.triangle_data.count / 3) - 1 {
-            indices[it][0] = modelInf.triangle_data[it * 3];
-            indices[it][1] = modelInf.triangle_data[(it * 3) + 1];
-            indices[it][2] = modelInf.triangle_data[(it * 3) + 2];
-	    it += 3;
-        }
+        vecs := buffer_2_vec(modelInf.vertex_data);
+        vecs = normalize_vec3_arr(vecs);
+        verts = vec_2_buf(vecs);
+        indices = modelInf.triangle_data;
         case;;
     }
-    vbufsize := verts.count * size_of(Vertex);
-    ibufsize := indices.count * size_of([3] u64);
-    mesh:Mesh;
-    mesh.vertexBuf = alloc_buffers(xx vbufsize,.STORAGE_BUFFER_BIT | .TRANSFER_DST_BIT | .SHADER_DEVICE_ADDRESS_BIT,r,.GPU_ONLY);
+    print("indices:%\nverts:%\n",indices,verts);
+    vbufsize := verts.count * size_of(float);
+    ibufsize := indices.count * size_of(u32);
+    r.mesh.vertexBuf = alloc_buffers(xx vbufsize,.VERTEX_BUFFER_BIT | .TRANSFER_DST_BIT | .SHADER_DEVICE_ADDRESS_BIT,r,.GPU_ONLY);
     devAddrInfo:VkBufferDeviceAddressInfo = .{};
-    devAddrInfo.buffer = mesh.vertexBuf.vBuffer;
+    devAddrInfo.pNext = null;
+    devAddrInfo.buffer = r.mesh.vertexBuf.vBuffer;
 
-    mesh.vertexLoc = vkGetBufferDeviceAddress(r.pipeline.lDevice,*devAddrInfo);
+    r.mesh.vertexLoc = vkGetBufferDeviceAddress(r.pipeline.lDevice,*devAddrInfo);
     
-    mesh.indexBuf = alloc_buffers(xx ibufsize, .VK_BUFFER_USAGE_INDEX_BUFFER_BIT | .VK_BUFFER_USAGE_TRANSFER_DST_BIT,r,.GPU_ONLY);
-     
+    r.mesh.indexBuf = alloc_buffers(xx ibufsize, .VK_BUFFER_USAGE_INDEX_BUFFER_BIT | .VK_BUFFER_USAGE_TRANSFER_DST_BIT,r,.GPU_ONLY);
+ 
+    r.mesh.vertCount = indices.count;
+
     staging_buffer := alloc_buffers(xx (vbufsize + ibufsize), .VK_BUFFER_USAGE_TRANSFER_SRC_BIT,r,.CPU_ONLY);
 
-    data := staging_buffer.mem;
-    mcpy_bufs(pos,data); 
-    mcpy_bufs(modelInf.triangle_data,data);
-    r.mesh = mesh; 
+    data:*void;
+    vkMapMemory(r.pipeline.lDevice,staging_buffer.vkmem,0,xx (vbufsize + ibufsize),0,*data);
+    memcpy(data,verts.data,vbufsize);
+    memcpy(data,indices.data,ibufsize);
+    print("%\n",data);
+    print("%\n",staging_buffer.vkmem);
     context.ibufsize = ibufsize;
     context.vbufsize = vbufsize;
     context.staging_buffer = staging_buffer;
@@ -89,6 +85,11 @@ cleanup :: (r:fwdpp_r) {
         vkDestroyImageView(r.pipeline.lDevice,view,null);
     }
 
+    vkFreeMemory(r.pipeline.lDevice,context.staging_buffer.vkmem,null);
+    vkFreeMemory(r.pipeline.lDevice,r.mesh.vertexBuf.vkmem,null);
+    vkFreeMemory(r.pipeline.lDevice,r.mesh.indexBuf.vkmem,null);
+    vkDestroyBuffer(r.pipeline.lDevice,r.mesh.indexBuf.vBuffer,null);
+    vkDestroyBuffer(r.pipeline.lDevice,r.mesh.vertexBuf.vBuffer,null);
     vkDestroySemaphore(r.pipeline.lDevice,r.pipeline.g_Pipeline.sync.imageAvailable[0],null);
     vkDestroySemaphore(r.pipeline.lDevice,r.pipeline.g_Pipeline.sync.renderFinished[0],null);
     vkDestroyFence(r.pipeline.lDevice,r.pipeline.g_Pipeline.sync.inFlight[0],null);
@@ -121,9 +122,7 @@ Copy_bufs :: (r:fwdpp_r) {
 	ibufcopy.size = xx context.ibufsize;	
 
 	vkCmdCopyBuffer(r.pipeline.g_Pipeline.commandBuffers[cmdIndex],context.staging_buffer.vBuffer,r.mesh.indexBuf.vBuffer,1,*ibufcopy);
-	print("alright\n");
-        vkDestroyBuffer(r.pipeline.lDevice,context.staging_buffer.vBuffer,null);
-	print("alright\n");
+    vkDestroyBuffer(r.pipeline.lDevice,context.staging_buffer.vBuffer,null);
 }
 
 
@@ -135,6 +134,7 @@ device_extensions:[] *u8 = .[
     VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME.data,
     VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME.data,
     VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME.data,
+    VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME.data,
 ];
 #if OS == .WINDOWS {
     extensions:[] *u8 = .[
@@ -147,19 +147,19 @@ device_extensions:[] *u8 = .[
 
 graphics_pipeline :: struct {
     mainshaders:[2] VkShaderModule;
-    dynamic_states:[2] VkDynamicState = .[.VK_DYNAMIC_STATE_VIEWPORT,.VK_DYNAMIC_STATE_SCISSOR];
-    viewport:VkViewport;
-    scissor:VkRect2D;
-    states:[9] *void;
+    dynamic_states:[3] VkDynamicState = .[.VK_DYNAMIC_STATE_VIEWPORT,.VK_DYNAMIC_STATE_SCISSOR,.VK_DYNAMIC_STATE_VERTEX_INPUT_EXT];
+    viewport:VkViewport = .{};
+    scissor:VkRect2D = .{};
+    states:[8] *void;
     plLayout:VkPipelineLayout;
     //rpass:VkRenderPass;
     pipeline:VkPipeline;
     //fbuffers:[] VkFramebuffer;
     commandPool:VkCommandPool;
     commandBuffers:[]VkCommandBuffer;
-    sync:synchronization_data;
-    presentinfo:VkPresentInfoKHR;
-    renInfo:VkPipelineRenderingCreateInfo;
+    sync:synchronization_data = .{};
+    presentinfo:VkPresentInfoKHR = .{};
+    renInfo:VkPipelineRenderingCreateInfo = .{};
 }
 
 synchronization_data :: struct {
@@ -200,33 +200,34 @@ create_g_pipeline :: (r:*fwdpp_r) {
 
     // Fixed function bs
     v_stageinf:VkPipelineShaderStageCreateInfo = .{};
+    v_stageinf.pNext = null;
+    v_stageinf.flags = 0;
     v_stageinf.stage = .VK_SHADER_STAGE_VERTEX_BIT;
     v_stageinf.module = vmod;
     v_stageinf.pName = "main";
+
     f_stageinf:VkPipelineShaderStageCreateInfo = .{};
+    f_stageinf.pNext = null;
+    f_stageinf.flags = 0;
     f_stageinf.stage = .VK_SHADER_STAGE_FRAGMENT_BIT;
     f_stageinf.module = fmod;
     f_stageinf.pName = "main";
 
     stages:[2] VkPipelineShaderStageCreateInfo = .[v_stageinf,f_stageinf];
 
-    r.pipeline.g_Pipeline.dynamic_states = .[.VK_DYNAMIC_STATE_VIEWPORT,.VK_DYNAMIC_STATE_SCISSOR];
+    r.pipeline.g_Pipeline.dynamic_states = .[.VK_DYNAMIC_STATE_VIEWPORT,.VK_DYNAMIC_STATE_SCISSOR,.VK_DYNAMIC_STATE_VERTEX_INPUT_EXT];
 
-    stateCInfo:VkPipelineDynamicStateCreateInfo;
-    stateCInfo.pDynamicStates = *r.pipeline.g_Pipeline.dynamic_states[0];
-    stateCInfo.dynamicStateCount = 2;
+    stateCInfo:VkPipelineDynamicStateCreateInfo = .{};
+    stateCInfo.pNext = null;
+    stateCInfo.flags = 0;
+    stateCInfo.pDynamicStates = r.pipeline.g_Pipeline.dynamic_states.data;
+    stateCInfo.dynamicStateCount = 3;
 
 
-
-    viInfo:VkPipelineVertexInputStateCreateInfo = .{};
-
-    viInfo.vertexBindingDescriptionCount = 0;
-    viInfo.pVertexBindingDescriptions = null;
-    viInfo.vertexAttributeDescriptionCount = 0;
-    viInfo.pVertexAttributeDescriptions = null;
 
     asmcInfo:VkPipelineInputAssemblyStateCreateInfo = .{};
-
+    asmcInfo.pNext = null;
+    asmcInfo.flags = 0;
     asmcInfo.topology = .VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     asmcInfo.primitiveRestartEnable = VK_FALSE;
 
@@ -237,20 +238,30 @@ create_g_pipeline :: (r:*fwdpp_r) {
     gpLine.viewport.maxDepth = 1;
 
     vpState:VkPipelineViewportStateCreateInfo = .{};
-
+    vpState.pNext = null;
+    vpState.flags = 0;
     vpState.viewportCount = 1;
-    //vpState.pViewports = *gpLine.viewport;
+    vpState.pViewports = null;
     vpState.scissorCount = 1;
-    //vpState.pScissors = *r.pipeline.g_Pipeline.scissor;
+    vpState.pScissors = null;
 
     rast:VkPipelineRasterizationStateCreateInfo = .{};
 
     rast.polygonMode = .VK_POLYGON_MODE_FILL;
     rast.lineWidth = 1.0;
-    rast.cullMode = .NONE;
+    rast.cullMode = .BACK_BIT;
     rast.frontFace = .VK_FRONT_FACE_CLOCKWISE;
+    rast.depthClampEnable = VK_TRUE;
+    rast.flags = 0;
+    rast.rasterizerDiscardEnable = VK_FALSE;
+    rast.depthBiasEnable = VK_TRUE;
+    rast.depthBiasConstantFactor = 1.0;
+    rast.depthBiasClamp = 1.0;
+    rast.depthBiasSlopeFactor = 1.0;
 
     multisampling:VkPipelineMultisampleStateCreateInfo = .{};
+    multisampling.pNext = null;
+    multisampling.flags = 0;
 
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = .VK_SAMPLE_COUNT_1_BIT;
@@ -267,10 +278,11 @@ create_g_pipeline :: (r:*fwdpp_r) {
     colorBlendAtt.dstAlphaBlendFactor = .VK_BLEND_FACTOR_ZERO;
     colorBlendAtt.alphaBlendOp = .VK_BLEND_OP_ADD;
 
-    depthStencilCI: VkPipelineDepthStencilStateCreateInfo;
-    depthStencilCI.depthTestEnable = VK_FALSE;
-	depthStencilCI.depthWriteEnable = VK_FALSE;
-	depthStencilCI.depthCompareOp = .VK_COMPARE_OP_NEVER;
+    depthStencilCI: VkPipelineDepthStencilStateCreateInfo = .{};
+    depthStencilCI.pNext = null;
+    depthStencilCI.depthTestEnable = VK_TRUE;
+	depthStencilCI.depthWriteEnable = VK_TRUE;
+	depthStencilCI.depthCompareOp = .VK_COMPARE_OP_GREATER_OR_EQUAL;
 	depthStencilCI.depthBoundsTestEnable = VK_FALSE;
 	depthStencilCI.stencilTestEnable = VK_FALSE;
 	depthStencilCI.front = .{};
@@ -278,19 +290,28 @@ create_g_pipeline :: (r:*fwdpp_r) {
 	depthStencilCI.minDepthBounds = 0;
 	depthStencilCI.maxDepthBounds= 1;
 
-    colorBlend: VkPipelineColorBlendStateCreateInfo;
+    colorBlend: VkPipelineColorBlendStateCreateInfo = .{};
     colorBlend.logicOpEnable = VK_FALSE;
     colorBlend.attachmentCount = 1;
     colorBlend.pAttachments = *colorBlendAtt;
+    colorBlend.blendConstants = .[1,1,1,1];
 
-    gpLine.states = .[*stages,*stateCInfo,*viInfo,*asmcInfo,*vpState,*rast,*multisampling,*colorBlendAtt,*colorBlend];
+    gpLine.states = .[*stages,*stateCInfo,*asmcInfo,*vpState,*rast,*multisampling,*colorBlendAtt,*colorBlend];
+    bufRange:VkPushConstantRange = .{};
+    bufRange.offset = 0;
+    bufRange.size = size_of(World);
+    bufRange.stageFlags = .VK_SHADER_STAGE_VERTEX_BIT;
+    
 
     {
         plcInf:VkPipelineLayoutCreateInfo = .{};
         plcInf.setLayoutCount = 0;
         plcInf.pSetLayouts = null;
-        plcInf.pushConstantRangeCount = 0;
-        plcInf.pPushConstantRanges = null;
+
+        plcInf.pPushConstantRanges = *bufRange;
+        plcInf.pushConstantRangeCount = 1;
+
+
         result := vkCreatePipelineLayout(r.pipeline.lDevice,*plcInf,null,*gpLine.plLayout);
         if result != .VK_SUCCESS {
             log(.Error,sprint("couldnt create pipeline layout because %\n",result));
@@ -310,7 +331,7 @@ create_g_pipeline :: (r:*fwdpp_r) {
 
     pipeCInfo.stageCount = stages.count;
     pipeCInfo.pStages = stages.data;
-    pipeCInfo.pVertexInputState = *viInfo;
+    pipeCInfo.pVertexInputState = VK_NULL_HANDLE;
     pipeCInfo.pInputAssemblyState = *asmcInfo;
     pipeCInfo.pViewportState = *vpState;
     pipeCInfo.pRasterizationState = *rast;
@@ -319,8 +340,7 @@ create_g_pipeline :: (r:*fwdpp_r) {
     pipeCInfo.pColorBlendState = *colorBlend;
     pipeCInfo.pDynamicState = *stateCInfo;
     pipeCInfo.layout = gpLine.plLayout;
-    //
-    //pipeCInfo.renderPass = VK_NULL_HANDLE;
+    pipeCInfo.renderPass = VK_NULL_HANDLE;
     pipeCInfo.subpass = 0;
     pipeCInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipeCInfo.basePipelineIndex = -1;
@@ -329,7 +349,7 @@ create_g_pipeline :: (r:*fwdpp_r) {
     rInfo.pColorAttachmentFormats = *r.pipeline.Format;
     rInfo.depthAttachmentFormat = .UNDEFINED;
 
-    {
+        {
         result := vkCreateGraphicsPipelines(r.pipeline.lDevice,VK_NULL_HANDLE,1,*pipeCInfo,null,*gpLine.pipeline);
         if result != .VK_SUCCESS {
             log(.Error,sprint("Could not create pipeline because %\n",result));
@@ -415,7 +435,7 @@ init_vk :: (win:winfo_t) -> Vk_Pipeline {
     createinf.enabledLayerCount = 1;
     createinf.ppEnabledLayerNames = enabled_layers.data;
 
-    debug_create_info: VkDebugUtilsMessengerCreateInfoEXT;
+    debug_create_info: VkDebugUtilsMessengerCreateInfoEXT = .{};
     debug_create_info.messageSeverity = .VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | .VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | .VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     debug_create_info.messageType = .VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | .VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | .VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     debug_create_info.pfnUserCallback = vulkan_debug_callback;
@@ -443,7 +463,7 @@ init_vk :: (win:winfo_t) -> Vk_Pipeline {
     assert(devCount != 0,"No gpus found");
 
     graphics_queue:u32 = 0;
-    devfeatures:VkPhysicalDeviceFeatures;
+    devfeatures:VkPhysicalDeviceFeatures = .{};
 
     vk.pDevice,graphics_queue,devfeatures = is_device_valid(devices,vk.surface);
 
@@ -468,7 +488,6 @@ init_vk :: (win:winfo_t) -> Vk_Pipeline {
     createqInfo.pQueuePriorities = *priority;
 
     enabledynRend:VkPhysicalDeviceVulkan13Features = .{};
-
     enabledynRend.dynamicRendering = VK_TRUE;
     enabledynRend.synchronization2 = VK_TRUE;
 
@@ -477,6 +496,11 @@ init_vk :: (win:winfo_t) -> Vk_Pipeline {
     enabledevADDR.descriptorIndexing  = VK_TRUE;
 
     enabledynRend.pNext = *enabledevADDR;
+
+    enableDynamicVertexInput: VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT = .{};
+    enableDynamicVertexInput.vertexInputDynamicState = VK_TRUE;
+
+    enabledevADDR.pNext = *enableDynamicVertexInput;
 
     ldCreateInfo:VkDeviceCreateInfo = .{};
     ldCreateInfo.pNext = *enabledynRend;
@@ -544,12 +568,12 @@ init_vk :: (win:winfo_t) -> Vk_Pipeline {
 
     // Swapchain
 
-    surfacecapabilites:VkSurfaceCapabilitiesKHR;
+    surfacecapabilites:VkSurfaceCapabilitiesKHR = .{};
 
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk.pDevice,vk.surface,*surfacecapabilites);
 
     formatCount:u32 = 0;
-    formats:[] VkSurfaceFormatKHR;
+    formats:[] VkSurfaceFormatKHR = .{};
     vkGetPhysicalDeviceSurfaceFormatsKHR(vk.pDevice, vk.surface, *formatCount, null);
     formats = NewArray(formatCount,VkSurfaceFormatKHR);
     vkGetPhysicalDeviceSurfaceFormatsKHR(vk.pDevice, vk.surface, *formatCount, formats.data);
@@ -652,7 +676,7 @@ is_device_valid :: (devices:[] VkPhysicalDevice,surface:VkSurfaceKHR) -> VkPhysi
 }
 
 choose_schain_settings :: (formats:[] VkSurfaceFormatKHR,modes:[..] VkPresentModeKHR,sCaps:VkSurfaceCapabilitiesKHR,win:winfo_t) -> VkSurfaceFormatKHR,VkPresentModeKHR,VkExtent2D {
-    fmt:VkSurfaceFormatKHR;
+    fmt:VkSurfaceFormatKHR = .{};
     for sformat: formats {
         if sformat.format == .VK_FORMAT_B8G8R8A8_SRGB  && sformat.colorSpace == .VK_COLOR_SPACE_SRGB_NONLINEAR_KHR{
             fmt.format = sformat.format;
@@ -673,7 +697,7 @@ choose_schain_settings :: (formats:[] VkSurfaceFormatKHR,modes:[..] VkPresentMod
 
     }
 
-    extent:VkExtent2D;
+    extent:VkExtent2D = .{};
 
     #if OS == .WINDOWS {
         #import "Windows";
@@ -697,19 +721,21 @@ choose_schain_settings :: (formats:[] VkSurfaceFormatKHR,modes:[..] VkPresentMod
 buffer :: struct {
     vBuffer:VkBuffer;
     mem:*void;
+    vkmem:VkDeviceMemory;
     type:VkBufferUsageFlags;
 }
 
 
 
-Vertex :: struct {
-    pos:Vector3;
-    uv:Vector2;
-    // We do not need normals for a CAD program
-    color:Vector4;
-}
+// Vertex :: struct {
+//     pos:Vector3;
+//     uv:Vector2;
+//     // We do not need normals for a CAD program
+//     color:Vector4;
+// }
 
 Mesh :: struct {
+    vertCount:int;
     vertexBuf:buffer;
     indexBuf:buffer;
     vertexLoc:VkDeviceAddress;
@@ -717,7 +743,6 @@ Mesh :: struct {
 
 World :: struct {
     transform:Matrix4;
-    vertexBuffer:VkDeviceAddress;
 }
 
 memtype :: enum {
@@ -738,7 +763,7 @@ alloc_buffers :: (size:u64,use:VkBufferUsageFlags,r:*fwdpp_r,memory:memtype) -> 
     vkCreateBuffer(r.pipeline.lDevice,*bufferCI,null,*buf.vBuffer);
     buf.type = use;
 
-    memprops:VkPhysicalDeviceMemoryProperties;
+    memprops:VkPhysicalDeviceMemoryProperties = .{};
 
     vkGetPhysicalDeviceMemoryProperties(r.pipeline.pDevice,*memprops);
     index:u32;
@@ -766,24 +791,24 @@ alloc_buffers :: (size:u64,use:VkBufferUsageFlags,r:*fwdpp_r,memory:memtype) -> 
     offset:u64 = 0;
 
     vkBindBufferMemory(r.pipeline.lDevice,buf.vBuffer,devMem,offset);
-
+    buf.vkmem = devMem;
     return buf;
 }
 
-mcpy_bufs :: (src:[] float, dest:*void) {
-	if dest == null {
-		dest = alloc(size_of(float) * src.count);
-	}
+// mcpy_bufs :: (src:[] float, dest:*void) {
+// 	if dest == null {
+// 		dest = alloc(size_of(float) * src.count);
+// 	}
 	
-	memcpy(dest,src.data,src.count);
-}
-mcpy_bufs :: (src:[] u64, dest:*void) {
-	if dest == null {
-		dest = alloc(size_of(u64) * src.count);
-	}
+// 	memcpy(dest,src.data,src.count);
+// }
+// mcpy_bufs :: (src:[] u32, dest:*void) {
+// 	if dest == null {
+// 		dest = alloc(size_of(u32) * src.count);
+// 	}
 	
-	memcpy(dest,src.data,src.count);
-}
+// 	memcpy(dest,src.data,src.count);
+// }
 
 find_gpu_only_mem :: (memProps:VkPhysicalDeviceMemoryProperties) -> u32 {
         for 0..31 {
