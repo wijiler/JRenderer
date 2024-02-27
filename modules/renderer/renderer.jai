@@ -9,6 +9,9 @@ Vk_Pipeline :: struct {
     surface: VkSurfaceKHR;
     sChain: VkSwapchainKHR = VK_NULL_HANDLE;
     imgs:[] VkImage;
+    depthimg:VkImage;
+    depthimgmem:VkDeviceMemory;
+    depthImgView:VkImageView;
     Extent:VkExtent2D = .{};
     Format:VkFormat;
     ImageViews:[] VkImageView;
@@ -17,6 +20,8 @@ Vk_Pipeline :: struct {
 
 #add_context vbufsize:int = 0;
 #add_context ibufsize:int = 0;
+#add_context indices:[] u32;
+#add_context istaging_buffer:buffer = .{};
 #add_context staging_buffer:buffer = .{};
 
 // foward ++ renderer
@@ -40,23 +45,22 @@ init_renderer :: (win:winfo_t) -> fwdpp_r {
 }
 
 load_mesh :: (r:*fwdpp_r,modelInf:MFFP_parser) {
-    pfn_vkCmdSetVertexInputEXT = vkGetInstanceProcAddr(r.pipeline.inst,"vkCmdSetVertexInputEXT");
-    vkCmdSetVertexInputEXT = cast(PFN_vkCmdSetVertexInputEXT) pfn_vkCmdSetVertexInputEXT;
-    verts:[] float;
+
+    verts:[] Vector3;
     indices:[] u32;
     // we need to switch how we handle data based on file
     if modelInf.type=={
         case .P_3MF;
         vecs := buffer_2_vec(modelInf.vertex_data);
-        vecs = normalize_vec3_arr(vecs);
-        verts = vec_2_buf(vecs);
+        //vecs = normalize_vec3_arr(vecs);
+        verts = vecs;
         indices = modelInf.triangle_data;
         case;;
     }
-    print("indices:%\nverts:%\n",indices,verts);
-    vbufsize := verts.count * size_of(float);
+    print("verts:%\nindices:%\n",verts,indices);
+    vbufsize := verts.count * size_of(Vector3);
     ibufsize := indices.count * size_of(u32);
-    r.mesh.vertexBuf = alloc_buffers(xx vbufsize,.VERTEX_BUFFER_BIT | .TRANSFER_DST_BIT | .SHADER_DEVICE_ADDRESS_BIT,r,.GPU_ONLY);
+    r.mesh.vertexBuf = alloc_buffers(xx (vbufsize),.VERTEX_BUFFER_BIT | .TRANSFER_DST_BIT | .SHADER_DEVICE_ADDRESS_BIT,r,.GPU_ONLY);
     devAddrInfo:VkBufferDeviceAddressInfo = .{};
     devAddrInfo.pNext = null;
     devAddrInfo.buffer = r.mesh.vertexBuf.vBuffer;
@@ -67,17 +71,27 @@ load_mesh :: (r:*fwdpp_r,modelInf:MFFP_parser) {
  
     r.mesh.vertCount = indices.count;
 
-    staging_buffer := alloc_buffers(xx (vbufsize + ibufsize), .VK_BUFFER_USAGE_TRANSFER_SRC_BIT,r,.CPU_ONLY);
+    vstaging_buffer := alloc_buffers(xx (vbufsize), .VK_BUFFER_USAGE_TRANSFER_SRC_BIT,r,.CPU_ONLY);
 
     data:*void;
-    vkMapMemory(r.pipeline.lDevice,staging_buffer.vkmem,0,xx (vbufsize + ibufsize),0,*data);
+    if vkMapMemory(r.pipeline.lDevice,vstaging_buffer.vkmem,0,xx (vbufsize),0,*data) != .VK_SUCCESS then exit(1);
     memcpy(data,verts.data,vbufsize);
-    memcpy(data,indices.data,ibufsize);
+    vkUnmapMemory(r.pipeline.lDevice,vstaging_buffer.vkmem);
+
+    idata:*void;
+    istaging_buffer := alloc_buffers(xx (ibufsize), .VK_BUFFER_USAGE_TRANSFER_SRC_BIT,r,.CPU_ONLY);
+
+    if vkMapMemory(r.pipeline.lDevice,istaging_buffer.vkmem,0,xx (ibufsize),0,*idata) != .VK_SUCCESS then exit(1);
+    memcpy(idata,indices.data,ibufsize);
+    vkUnmapMemory(r.pipeline.lDevice,istaging_buffer.vkmem);
+
     print("%\n",data);
-    print("%\n",staging_buffer.vkmem);
+    print("%\n",vstaging_buffer.vkmem);
+    context.indices = indices;
     context.ibufsize = ibufsize;
     context.vbufsize = vbufsize;
-    context.staging_buffer = staging_buffer;
+    context.staging_buffer = vstaging_buffer;
+    context.istaging_buffer = istaging_buffer;
 }
 cleanup :: (r:fwdpp_r) {
     vkDestroySwapchainKHR(r.pipeline.lDevice,r.pipeline.sChain,null);
@@ -121,8 +135,10 @@ Copy_bufs :: (r:fwdpp_r) {
 	ibufcopy.srcOffset = 0;
 	ibufcopy.size = xx context.ibufsize;	
 
-	vkCmdCopyBuffer(r.pipeline.g_Pipeline.commandBuffers[cmdIndex],context.staging_buffer.vBuffer,r.mesh.indexBuf.vBuffer,1,*ibufcopy);
+	vkCmdCopyBuffer(r.pipeline.g_Pipeline.commandBuffers[cmdIndex],context.istaging_buffer.vBuffer,r.mesh.indexBuf.vBuffer,1,*ibufcopy);
+
     vkDestroyBuffer(r.pipeline.lDevice,context.staging_buffer.vBuffer,null);
+    vkDestroyBuffer(r.pipeline.lDevice,context.istaging_buffer.vBuffer,null);
 }
 
 
@@ -134,7 +150,7 @@ device_extensions:[] *u8 = .[
     VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME.data,
     VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME.data,
     VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME.data,
-    VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME.data,
+    VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME.data,
 ];
 #if OS == .WINDOWS {
     extensions:[] *u8 = .[
@@ -147,7 +163,7 @@ device_extensions:[] *u8 = .[
 
 graphics_pipeline :: struct {
     mainshaders:[2] VkShaderModule;
-    dynamic_states:[3] VkDynamicState = .[.VK_DYNAMIC_STATE_VIEWPORT,.VK_DYNAMIC_STATE_SCISSOR,.VK_DYNAMIC_STATE_VERTEX_INPUT_EXT];
+    dynamic_states:[2] VkDynamicState = .[.VK_DYNAMIC_STATE_VIEWPORT,.VK_DYNAMIC_STATE_SCISSOR];
     viewport:VkViewport = .{};
     scissor:VkRect2D = .{};
     states:[8] *void;
@@ -172,6 +188,28 @@ create_g_pipeline :: (r:*fwdpp_r) {
     gpLine:graphics_pipeline = .{};
 
     #import "File";
+
+    posbufferDesc:VkVertexInputBindingDescription = .{}; 
+
+
+    posbufferDesc.binding = 0;
+    posbufferDesc.stride = size_of(Vector3);
+    posbufferDesc.inputRate = 0; // vertex
+    
+    posAttrDesc:VkVertexInputAttributeDescription = .{};
+
+
+    posAttrDesc.location = 0;
+    posAttrDesc.binding = 0;
+    posAttrDesc.offset = 0;
+    posAttrDesc.format = .VK_FORMAT_R32G32B32_SFLOAT ;
+
+    vertInputSTA:VkPipelineVertexInputStateCreateInfo = .{};
+    vertInputSTA.pVertexBindingDescriptions = *posbufferDesc;
+    vertInputSTA.vertexBindingDescriptionCount = 1;
+    vertInputSTA.vertexAttributeDescriptionCount = 1;
+    vertInputSTA.pVertexAttributeDescriptions = *posAttrDesc;
+
     // Reading the shader files
     vsha,vlen := read_spirv_file("shaders/vtriangle.spv");
     fsha,flen := read_spirv_file("shaders/ftriangle.spv");
@@ -215,13 +253,13 @@ create_g_pipeline :: (r:*fwdpp_r) {
 
     stages:[2] VkPipelineShaderStageCreateInfo = .[v_stageinf,f_stageinf];
 
-    r.pipeline.g_Pipeline.dynamic_states = .[.VK_DYNAMIC_STATE_VIEWPORT,.VK_DYNAMIC_STATE_SCISSOR,.VK_DYNAMIC_STATE_VERTEX_INPUT_EXT];
+    r.pipeline.g_Pipeline.dynamic_states = .[.VK_DYNAMIC_STATE_VIEWPORT,.VK_DYNAMIC_STATE_SCISSOR];
 
     stateCInfo:VkPipelineDynamicStateCreateInfo = .{};
     stateCInfo.pNext = null;
     stateCInfo.flags = 0;
     stateCInfo.pDynamicStates = r.pipeline.g_Pipeline.dynamic_states.data;
-    stateCInfo.dynamicStateCount = 3;
+    stateCInfo.dynamicStateCount = 2;
 
 
 
@@ -235,7 +273,7 @@ create_g_pipeline :: (r:*fwdpp_r) {
     gpLine.viewport.width = xx r.pipeline.Extent.width; gpLine.viewport.height = xx r.pipeline.Extent.height;
 
     gpLine.viewport.minDepth = 0;
-    gpLine.viewport.maxDepth = 1;
+    gpLine.viewport.maxDepth = 1000;
 
     vpState:VkPipelineViewportStateCreateInfo = .{};
     vpState.pNext = null;
@@ -283,12 +321,12 @@ create_g_pipeline :: (r:*fwdpp_r) {
     depthStencilCI.depthTestEnable = VK_TRUE;
 	depthStencilCI.depthWriteEnable = VK_TRUE;
 	depthStencilCI.depthCompareOp = .VK_COMPARE_OP_GREATER_OR_EQUAL;
-	depthStencilCI.depthBoundsTestEnable = VK_FALSE;
+	depthStencilCI.depthBoundsTestEnable = VK_TRUE;
 	depthStencilCI.stencilTestEnable = VK_FALSE;
 	depthStencilCI.front = .{};
 	depthStencilCI.back = .{};
 	depthStencilCI.minDepthBounds = 0;
-	depthStencilCI.maxDepthBounds= 1;
+	depthStencilCI.maxDepthBounds= 1000;
 
     colorBlend: VkPipelineColorBlendStateCreateInfo = .{};
     colorBlend.logicOpEnable = VK_FALSE;
@@ -331,7 +369,7 @@ create_g_pipeline :: (r:*fwdpp_r) {
 
     pipeCInfo.stageCount = stages.count;
     pipeCInfo.pStages = stages.data;
-    pipeCInfo.pVertexInputState = VK_NULL_HANDLE;
+    pipeCInfo.pVertexInputState = *vertInputSTA;
     pipeCInfo.pInputAssemblyState = *asmcInfo;
     pipeCInfo.pViewportState = *vpState;
     pipeCInfo.pRasterizationState = *rast;
@@ -500,7 +538,7 @@ init_vk :: (win:winfo_t) -> Vk_Pipeline {
     enableDynamicVertexInput: VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT = .{};
     enableDynamicVertexInput.vertexInputDynamicState = VK_TRUE;
 
-    enabledevADDR.pNext = *enableDynamicVertexInput;
+    //enabledevADDR.pNext = *enableDynamicVertexInput;
 
     ldCreateInfo:VkDeviceCreateInfo = .{};
     ldCreateInfo.pNext = *enabledynRend;
@@ -742,7 +780,7 @@ Mesh :: struct {
 }
 
 World :: struct {
-    transform:Matrix4;
+    transform:matr44;
 }
 
 memtype :: enum {
@@ -785,12 +823,12 @@ alloc_buffers :: (size:u64,use:VkBufferUsageFlags,r:*fwdpp_r,memory:memtype) -> 
     allocInfo.pNext = *flags;
     devMem:VkDeviceMemory;
 
-    vkAllocateMemory(r.pipeline.lDevice,*allocInfo,null,*devMem);
+    if vkAllocateMemory(r.pipeline.lDevice,*allocInfo,null,*devMem) != .VK_SUCCESS then exit ;
 
 
     offset:u64 = 0;
 
-    vkBindBufferMemory(r.pipeline.lDevice,buf.vBuffer,devMem,offset);
+    if vkBindBufferMemory(r.pipeline.lDevice,buf.vBuffer,devMem,0) != .VK_SUCCESS then exit;
     buf.vkmem = devMem;
     return buf;
 }
@@ -812,7 +850,7 @@ alloc_buffers :: (size:u64,use:VkBufferUsageFlags,r:*fwdpp_r,memory:memtype) -> 
 
 find_gpu_only_mem :: (memProps:VkPhysicalDeviceMemoryProperties) -> u32 {
         for 0..31 {
-		if memProps.memoryTypes[it].propertyFlags  == .DEVICE_LOCAL_BIT  { return xx it; }
+		if memProps.memoryTypes[it].propertyFlags & .DEVICE_LOCAL_BIT != 0  { return xx it; }
         }
         print("no_local_bits\n");
         return 0;
@@ -821,7 +859,7 @@ find_gpu_only_mem :: (memProps:VkPhysicalDeviceMemoryProperties) -> u32 {
 
 find_cpu_only_mem :: (memProps:VkPhysicalDeviceMemoryProperties) -> u32 {
 	for 0..31 {
-		if memProps.memoryTypes[it].propertyFlags == .HOST_COHERENT_BIT | .HOST_VISIBLE_BIT then return xx it;
+		if memProps.memoryTypes[it].propertyFlags & .HOST_COHERENT_BIT != 0 && memProps.memoryTypes[it].propertyFlags & .HOST_VISIBLE_BIT != 0 then return xx it;
 	}
         print("no_host_bits\n");
 	return 0;

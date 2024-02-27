@@ -112,6 +112,11 @@ rendering_info :: (renderExtent:VkExtent2D,  colorAttachment:*VkRenderingAttachm
     return renderInfo;
 }
 // Pick a color with which to clear the screen.
+
+rot:Quaternion = .{0,0.5,0,0};
+//irot:Quaternion = .{0,0,0,1};
+rotationamount:float = 0;
+neg := 1;
 color1 := Vector4.{1,  0.15, 1, 1};
 color2 := Vector4.{0, 0, 0, 1};
 record_buffers :: (r:*fwdpp_r) {
@@ -207,35 +212,35 @@ record_buffers :: (r:*fwdpp_r) {
     vkCmdSetViewport(r.pipeline.g_Pipeline.commandBuffers[index], 0, 1, *r.pipeline.g_Pipeline.viewport);
 
      
-    posbufferDesc:VkVertexInputBindingDescription2EXT = .{}; 
 
 
-    posbufferDesc.binding = 0;
-    posbufferDesc.stride = size_of(float) * 3;
-    posbufferDesc.inputRate = 0; // vertex
-    posbufferDesc.divisor = 1;
-    
-    posAttrDesc:VkVertexInputAttributeDescription2EXT = .{};
 
-
-    posAttrDesc.location = 0;
-    posAttrDesc.binding = 0;
-    posAttrDesc.offset = 0;
-    posAttrDesc.format = .VK_FORMAT_R32G32B32_SFLOAT ;
-
-
-    vkCmdSetVertexInputEXT(r.pipeline.g_Pipeline.commandBuffers[index],1,*posbufferDesc,1,*posAttrDesc);
+    //vkCmdSetVertexInputEXT(r.pipeline.g_Pipeline.commandBuffers[index],1,*posbufferDesc,1,*posAttrDesc);
 
 
     offset:u64 = 0;
 
-    world.transform = .{1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
+    //world.transform = .{coef=.[.[1,0,0,0],.[0,1,0,0],.[0,0,1,0],.[0,0,0,1]]};
 
-    view:Matrix4 = translate(world.transform,Vector3.{0,0,-.5});
 
-    projection:Matrix4 = perspective(1.22173,xx ( r.pipeline.Extent.width / r.pipeline.Extent.height ),1000,.1); 
-    world.transform = view * projection; 
-    //print("%\n",world.transform);
+    view:matr44 = translate_1(Vector3.{0,0,5});
+
+    rotationamount += .001;
+    clamp_reset(rotationamount,-1,1);
+
+    rot.x = (sin(rotationamount) + cos(rotationamount));
+
+    rotation := rotation_matrix(Matrix4,rot);
+
+    scale := make_scale_matrix4(Vector3.{1,1,1});
+
+    model_matrix:Matrix4 = view * rotation * scale;
+
+    projection:matr44 = perspective(1.22173,xx ( r.pipeline.Extent.width / r.pipeline.Extent.height ),1,0); 
+
+    world.transform = projection * view  * model_matrix;
+     
+   //print("%\n",world.transform);
 	
     
     vkCmdPushConstants(r.pipeline.g_Pipeline.commandBuffers[index],r.pipeline.g_Pipeline.plLayout,.VK_SHADER_STAGE_VERTEX_BIT,0, size_of(World), *world); 
@@ -304,3 +309,29 @@ init_cbuf :: (gpLine:*fwdpp_r) {
     log(.Info, "Created command buffers\n");
 }
 #import "Vulkan";
+#import "Math";
+// operator * :: (x:[4][4]float,y:[4][4]float) -> matr44 {
+//     m:matr44;
+//     m[0][0] = (x[0][0] * y[0][0]) + (x[1][0] * y[0][1]) + (x[2][0] * y[0][2]) + (x[3][0] * y[0][3]);
+//     m[1][0] = (x[0][0] * y[1][0]) + (x[1][0] * y[1][1]) + (x[2][0] * y[1][2]) + (x[3][0] * y[1][3]);
+//     m[2][0] = (x[0][0] * y[2][0]) + (x[1][0] * y[2][1]) + (x[2][0] * y[2][2]) + (x[3][0] * y[2][3]);
+//     m[3][0] = (x[0][0] * y[3][0]) + (x[1][0] * y[3][1]) + (x[2][0] * y[3][2]) + (x[3][0] * y[3][3]);
+
+//     m[0][1] = (x[0][1] * y[0][0]) + (x[1][1] * y[0][1]) + (x[2][1] * y[0][2]) + (x[3][1] * y[0][3]);
+//     m[1][1] = (x[0][1] * y[1][0]) + (x[1][1] * y[1][1]) + (x[2][1] * y[1][2]) + (x[3][1] * y[1][3]);
+//     m[2][1] = (x[0][1] * y[2][0]) + (x[1][1] * y[2][1]) + (x[2][1] * y[2][2]) + (x[3][1] * y[2][3]);
+//     m[3][1] = (x[0][1] * y[3][0]) + (x[1][1] * y[3][1]) + (x[2][1] * y[3][2]) + (x[3][1] * y[3][3]);
+
+//     m[0][2] = (x[0][2] * y[0][0]) + (x[1][2] * y[0][2]) + (x[2][2] * y[2][0]) + (x[3][2] * y[0][3]);
+//     m[1][2] = (x[0][2] * y[1][0]) + (x[1][2] * y[1][2]) + (x[2][2] * y[2][1]) + (x[3][2] * y[1][3]);
+//     m[2][2] = (x[0][2] * y[2][0]) + (x[1][2] * y[2][2]) + (x[2][2] * y[2][2]) + (x[3][2] * y[2][3]);
+//     m[3][2] = (x[0][2] * y[3][0]) + (x[1][2] * y[3][2]) + (x[2][2] * y[2][3]) + (x[3][2] * y[3][3]);
+
+//     m[0][3] = (x[0][3] * y[0][0]) + (x[1][3] * y[0][1]) + (x[2][3] * y[2][0]) + (x[3][3] * y[0][3]);
+//     m[1][3] = (x[0][3] * y[1][0]) + (x[1][3] * y[1][1]) + (x[2][3] * y[2][1]) + (x[3][3] * y[1][3]);
+//     m[2][3] = (x[0][3] * y[2][0]) + (x[1][3] * y[2][1]) + (x[2][3] * y[2][2]) + (x[3][3] * y[2][3]);
+//     m[3][3] = (x[0][3] * y[3][0]) + (x[1][3] * y[3][1]) + (x[2][3] * y[2][3]) + (x[3][3] * y[3][3]);
+
+//     //print("%\n",m);
+//     return m;
+// }
