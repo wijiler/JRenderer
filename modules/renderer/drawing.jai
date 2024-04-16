@@ -4,7 +4,7 @@ deviceWait :: (r:fwdpp_r) {
 #placeholder Submit;
 
 
-draw_frame :: (r:*fwdpp_r,bg:Vector4) {
+draw_frame :: (r:*fwdpp_r) {
     begin := seconds_since_init();
     imageIndex = 0;
     //print("Frame %\n", frame_index);
@@ -60,8 +60,6 @@ renderFinishedSemaphores: [FRAME_COUNT]VkSemaphore;
 
 #scope_module
 
-pfn_vkCmdSetVertexInputEXT:() -> () #c_call; 
-vkCmdSetVertexInputEXT:PFN_vkCmdSetVertexInputEXT ;
 world:World;
 cmdIndex:s64;
 
@@ -90,8 +88,8 @@ depth_attachment_info :: (view:VkImageView, layout:VkImageLayout) -> VkRendering
 
     depthAttachment.imageView = view;
     depthAttachment.imageLayout = layout;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    depthAttachment.loadOp = .VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = .VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachment.clearValue.depthStencil.depth = 0;
 
     return depthAttachment;
@@ -113,12 +111,11 @@ rendering_info :: (renderExtent:VkExtent2D,  colorAttachment:*VkRenderingAttachm
 }
 // Pick a color with which to clear the screen.
 
-rot:Quaternion = .{0,0.5,0,0};
+rot:Quaternion = .{0,1,0,1};
 //irot:Quaternion = .{0,0,0,1};
 rotationamount:float = 0;
 neg := 1;
-color1 := Vector4.{1,  0.15, 1, 1};
-color2 := Vector4.{0, 0, 0, 1};
+
 record_buffers :: (r:*fwdpp_r) {
     
     index := frame_index % FRAME_COUNT;
@@ -140,6 +137,15 @@ record_buffers :: (r:*fwdpp_r) {
         baseArrayLayer = 0;
         layerCount     = VK_REMAINING_ARRAY_LAYERS;
     }
+    depthSubResourceRange : VkImageSubresourceRange = .{};
+    {
+        using depthSubResourceRange;
+        aspectMask     = .VK_IMAGE_ASPECT_DEPTH_BIT | .VK_IMAGE_ASPECT_STENCIL_BIT;
+        baseMipLevel   = 0;
+        levelCount     = VK_REMAINING_MIP_LEVELS;
+        baseArrayLayer = 0;
+        layerCount     = VK_REMAINING_ARRAY_LAYERS;
+    }
     // Change layout of image to be optimal for clearing
     imgMemoryBarrier : VkImageMemoryBarrier = .{};
     {
@@ -153,21 +159,32 @@ record_buffers :: (r:*fwdpp_r) {
         image               = r.pipeline.imgs[imageIndex];
         subresourceRange    = subResourceRange;
     }
-    
+    depthBarrier : VkImageMemoryBarrier = .{};
+    {
+        using depthBarrier;
+        srcAccessMask       = 0 ;
+        dstAccessMask       = .VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT ;
+        oldLayout           = .UNDEFINED;
+        newLayout           = .VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        srcQueueFamilyIndex = r.pipeline.queueIndex;
+        dstQueueFamilyIndex = r.pipeline.queueIndex;
+        image               = r.pipeline.depthimg;
+        subresourceRange    = depthSubResourceRange;
+    }
     vkCmdPipelineBarrier(commandBuffers[index], .TRANSFER_BIT, .TRANSFER_BIT, 
                          0, 0, null, 0, null, 1, *imgMemoryBarrier);
 
-    clearColor : VkClearColorValue = .{};
-    {
+    clearColor : VkClearColorValue = .{.[0.01176, 0, 0.03922,1]};
+    // {
 
 
-        now := seconds_since_init();
-        t := cos(cast(float) now) * .5 + .5;
-        Clamp(*t, 0, 1);
-        color := lerp(color1, color2, t);
-        clearColor._float32 = color.component;
-        // clearColor.float32 = float.[1, 1, 0, 1];
-    }
+    //     now := seconds_since_init();
+    //     t := cos(cast(float) now) * .5 + .5;
+    //     Clamp(*t, 0, 1);
+    //     color := lerp(color1, color2, t);
+    //     clearColor._float32 = color.component;
+    //     // clearColor.float32 = float.[1, 1, 0, 1];
+    // }
 
     vkCmdClearColorImage(commandBuffers[index], r.pipeline.imgs[imageIndex], .TRANSFER_DST_OPTIMAL, *clearColor, 1, *subResourceRange);
 
@@ -177,17 +194,26 @@ record_buffers :: (r:*fwdpp_r) {
     imgMemoryBarrier.oldLayout     = .TRANSFER_DST_OPTIMAL;
     imgMemoryBarrier.newLayout     = .PRESENT_SRC_KHR;
 
-    vkCmdPipelineBarrier(commandBuffers[index], .TRANSFER_BIT, .BOTTOM_OF_PIPE_BIT,
-        0, 0, null, 0, null, 1, *imgMemoryBarrier);
+
+    
+
 
 
     cAttInfo:VkRenderingAttachmentInfo = attachment_info(r.pipeline.ImageViews[imageIndex],null,.VK_IMAGE_LAYOUT_GENERAL);
-    renInf:VkRenderingInfo = rendering_info(r.pipeline.Extent,*cAttInfo,null);
+    dAttInfo:VkRenderingAttachmentInfo = depth_attachment_info(r.pipeline.depthImgView,.DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+    renInf:VkRenderingInfo = rendering_info(r.pipeline.Extent,*cAttInfo,*dAttInfo);
 
     Submit();
     if frame_index == 1 {
     Copy_bufs(r);
     }
+
+    vkCmdPipelineBarrier(commandBuffers[index], 0, .VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+    0, 0, null, 0, null, 1, *depthBarrier);
+
+        vkCmdPipelineBarrier(commandBuffers[index], .TRANSFER_BIT, .VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+    0, 0, null, 0, null, 1, *imgMemoryBarrier);
+
 
     vkCmdBeginRendering(r.pipeline.g_Pipeline.commandBuffers[index],*renInf);
 
@@ -220,15 +246,15 @@ record_buffers :: (r:*fwdpp_r) {
 
     offset:u64 = 0;
 
-    //world.transform = .{coef=.[.[1,0,0,0],.[0,1,0,0],.[0,0,1,0],.[0,0,0,1]]};
+    world.transform = .{coef=.[.[1,0,0,0],.[0,1,0,0],.[0,0,1,0],.[0,0,0,1]]};
 
 
-    view:matr44 = translate_1(Vector3.{0,0,5});
+    view:matr44 = translate_1(Vector3.{0,0,0});
 
-    rotationamount += .001;
+
+    rotationamount += 0.001;
     clamp_reset(rotationamount,-1,1);
-
-    rot.x = (sin(rotationamount) + cos(rotationamount));
+    rot.x = sin(rotationamount) + cos(rotationamount);
 
     rotation := rotation_matrix(Matrix4,rot);
 
@@ -243,13 +269,20 @@ record_buffers :: (r:*fwdpp_r) {
    //print("%\n",world.transform);
 	
     
+
     vkCmdPushConstants(r.pipeline.g_Pipeline.commandBuffers[index],r.pipeline.g_Pipeline.plLayout,.VK_SHADER_STAGE_VERTEX_BIT,0, size_of(World), *world); 
     vkCmdBindVertexBuffers(r.pipeline.g_Pipeline.commandBuffers[index],0,1,*r.mesh.vertexBuf.vBuffer,*offset);
     vkCmdBindIndexBuffer(r.pipeline.g_Pipeline.commandBuffers[index],r.mesh.indexBuf.vBuffer,0,.VK_INDEX_TYPE_UINT32);
 
+
+
+
+
+
     vkCmdDrawIndexed(r.pipeline.g_Pipeline.commandBuffers[index], xx r.mesh.vertCount, 1, 0, 0,0);
     
     vkCmdEndRendering(commandBuffers[index]);
+
 
     vkEndCommandBuffer(commandBuffers[index]);
 }

@@ -69,7 +69,7 @@ load_mesh :: (r:*fwdpp_r,modelInf:MFFP_parser) {
     
     r.mesh.indexBuf = alloc_buffers(xx ibufsize, .VK_BUFFER_USAGE_INDEX_BUFFER_BIT | .VK_BUFFER_USAGE_TRANSFER_DST_BIT,r,.GPU_ONLY);
  
-    r.mesh.vertCount = indices.count;
+    r.mesh.vertCount = indices.count ;
 
     vstaging_buffer := alloc_buffers(xx (vbufsize), .VK_BUFFER_USAGE_TRANSFER_SRC_BIT,r,.CPU_ONLY);
 
@@ -151,6 +151,7 @@ device_extensions:[] *u8 = .[
     VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME.data,
     VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME.data,
     VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME.data,
+    VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME.data,
 ];
 #if OS == .WINDOWS {
     extensions:[] *u8 = .[
@@ -272,7 +273,7 @@ create_g_pipeline :: (r:*fwdpp_r) {
     gpLine.viewport.x = 0; gpLine.viewport.y = 0; 
     gpLine.viewport.width = xx r.pipeline.Extent.width; gpLine.viewport.height = xx r.pipeline.Extent.height;
 
-    gpLine.viewport.minDepth = 0;
+    gpLine.viewport.minDepth = -1000;
     gpLine.viewport.maxDepth = 1000;
 
     vpState:VkPipelineViewportStateCreateInfo = .{};
@@ -287,21 +288,21 @@ create_g_pipeline :: (r:*fwdpp_r) {
 
     rast.polygonMode = .VK_POLYGON_MODE_FILL;
     rast.lineWidth = 1.0;
-    rast.cullMode = .BACK_BIT;
+    //rast.cullMode = .BACK_BIT;
     rast.frontFace = .VK_FRONT_FACE_CLOCKWISE;
     rast.depthClampEnable = VK_TRUE;
     rast.flags = 0;
     rast.rasterizerDiscardEnable = VK_FALSE;
-    rast.depthBiasEnable = VK_TRUE;
-    rast.depthBiasConstantFactor = 1.0;
-    rast.depthBiasClamp = 1.0;
-    rast.depthBiasSlopeFactor = 1.0;
+    rast.depthBiasEnable = VK_FALSE;
+    // rast.depthBiasConstantFactor = 1.0;
+    // rast.depthBiasClamp = 1.0;
+    // rast.depthBiasSlopeFactor = 1.0;
 
     multisampling:VkPipelineMultisampleStateCreateInfo = .{};
     multisampling.pNext = null;
     multisampling.flags = 0;
 
-    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.sampleShadingEnable = VK_TRUE;
     multisampling.rasterizationSamples = .VK_SAMPLE_COUNT_1_BIT;
 
 
@@ -320,12 +321,12 @@ create_g_pipeline :: (r:*fwdpp_r) {
     depthStencilCI.pNext = null;
     depthStencilCI.depthTestEnable = VK_TRUE;
 	depthStencilCI.depthWriteEnable = VK_TRUE;
-	depthStencilCI.depthCompareOp = .VK_COMPARE_OP_GREATER_OR_EQUAL;
+	depthStencilCI.depthCompareOp = .GREATER_OR_EQUAL;
 	depthStencilCI.depthBoundsTestEnable = VK_TRUE;
 	depthStencilCI.stencilTestEnable = VK_FALSE;
 	depthStencilCI.front = .{};
 	depthStencilCI.back = .{};
-	depthStencilCI.minDepthBounds = 0;
+	depthStencilCI.minDepthBounds = -1000;
 	depthStencilCI.maxDepthBounds= 1000;
 
     colorBlend: VkPipelineColorBlendStateCreateInfo = .{};
@@ -385,7 +386,7 @@ create_g_pipeline :: (r:*fwdpp_r) {
 
     rInfo.colorAttachmentCount = 1;
     rInfo.pColorAttachmentFormats = *r.pipeline.Format;
-    rInfo.depthAttachmentFormat = .UNDEFINED;
+    rInfo.depthAttachmentFormat = .VK_FORMAT_D32_SFLOAT_S8_UINT;
 
         {
         result := vkCreateGraphicsPipelines(r.pipeline.lDevice,VK_NULL_HANDLE,1,*pipeCInfo,null,*gpLine.pipeline);
@@ -427,7 +428,62 @@ get_image_views :: (pipeline:*Vk_Pipeline) {
             log(.Warning,sprint("Could not create image view % because %",createInfo.image,result));
         }
     }
+    // depth buffering
+    dimgCreateInfo:VkImageCreateInfo = .{};
+    dimgCreateInfo.imageType = ._3D;
+    dimgCreateInfo.extent.width = pipeline.Extent.width;
+    dimgCreateInfo.extent.height = pipeline.Extent.height;
+    dimgCreateInfo.extent.depth = 1;
+    dimgCreateInfo.mipLevels = 1;
+    dimgCreateInfo.arrayLayers = 1;
+    dimgCreateInfo.format = .VK_FORMAT_D32_SFLOAT_S8_UINT;
+    dimgCreateInfo.tiling = .VK_IMAGE_TILING_OPTIMAL;
+    dimgCreateInfo.initialLayout = .VK_IMAGE_LAYOUT_UNDEFINED;
+    dimgCreateInfo.usage = .VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    dimgCreateInfo.samples = .VK_SAMPLE_COUNT_1_BIT;
+    dimgCreateInfo.sharingMode = .VK_SHARING_MODE_EXCLUSIVE;
+    vkCreateImage(pipeline.lDevice,*dimgCreateInfo,null,*pipeline.depthimg);
+    pmemRequirements:VkPhysicalDeviceMemoryProperties = .{};
+    vkGetPhysicalDeviceMemoryProperties(pipeline.pDevice,*pmemRequirements);
+    
+    memRequirements:VkMemoryRequirements = .{};
+    vkGetImageMemoryRequirements(pipeline.lDevice, pipeline.depthimg, *memRequirements);
 
+    allocInfo:VkMemoryAllocateInfo = .{};
+    allocInfo.sType = .VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    memindex:u32;
+
+    for 0..pmemRequirements.memoryTypes.count - 1 {
+        if (memRequirements.memoryTypeBits & (1 << it)) && (pmemRequirements.memoryTypes[it].propertyFlags & .VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) == .VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT { memindex = xx  it; break; } 
+    }
+
+    allocInfo.memoryTypeIndex = memindex;
+
+    if (vkAllocateMemory(pipeline.lDevice, *allocInfo, null, *pipeline.depthimgmem) != .VK_SUCCESS) {
+        log(.Error, "could not create  device memory");
+    }
+    vkBindImageMemory(pipeline.lDevice, pipeline.depthimg, pipeline.depthimgmem, 0);
+    //vkCreateImage(pipeline.Extent.width,pipeline.Extent.height,.VK_FORMAT_D32_SFLOAT_S8_UINT,.VK_IMAGE_TILING_OPTIMAL,.VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,*pipeline.depthimg,*pipeline.depthimgmem);
+    dCreateInfo: VkImageViewCreateInfo = .{};
+    dCreateInfo.image = pipeline.depthimg;
+    dCreateInfo.viewType = .VK_IMAGE_VIEW_TYPE_3D;
+    dCreateInfo.format = .VK_FORMAT_D32_SFLOAT_S8_UINT;
+
+    dCreateInfo.components.r = .VK_COMPONENT_SWIZZLE_IDENTITY;
+    dCreateInfo.components.g = .VK_COMPONENT_SWIZZLE_IDENTITY;
+    dCreateInfo.components.b = .VK_COMPONENT_SWIZZLE_IDENTITY;
+    dCreateInfo.components.a = .VK_COMPONENT_SWIZZLE_IDENTITY;
+
+    dCreateInfo.subresourceRange.aspectMask = .VK_IMAGE_ASPECT_DEPTH_BIT | .VK_IMAGE_ASPECT_STENCIL_BIT;
+    dCreateInfo.subresourceRange.baseMipLevel = 0;
+    dCreateInfo.subresourceRange.levelCount = 1;
+    dCreateInfo.subresourceRange.baseArrayLayer = 0;
+    dCreateInfo.subresourceRange.layerCount = 1;
+    result := vkCreateImageView(pipeline.lDevice, *dCreateInfo, null, *pipeline.depthImgView);
+    if result != .VK_SUCCESS {
+        log(.Warning,sprint("Could not create image view % because %",dCreateInfo.image,result));
+    }
 }
 
 

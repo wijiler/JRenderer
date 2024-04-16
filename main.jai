@@ -10,7 +10,7 @@ Init :: () {
 I:int = 0;
 framerate:int;
 get_frame_time :: () {
-    draw_frame(*rend,Vector4.{1.0,0.12,1.0,1.0});
+    draw_frame(*rend);
     
     // I += 1;
     // framerate = cast(int) (I/seconds_since_init());
@@ -38,7 +38,7 @@ main :: () {
 #import "Basic";
 #import "Math";
 #if OS == .MACOS {
-    print("Mac user lmfao screw you (I feel your struggle but moltenvk is such a shitty api)\n");
+    print("Mac user lmfao screw you\n");
     exit(1);
 }
 #import "Random";
