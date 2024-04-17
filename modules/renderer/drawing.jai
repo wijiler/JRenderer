@@ -111,10 +111,9 @@ rendering_info :: (renderExtent:VkExtent2D,  colorAttachment:*VkRenderingAttachm
 }
 // Pick a color with which to clear the screen.
 
-rot:Quaternion = .{0,1,0,1};
+rot:Quaternion = .{0,0,0,1};
+ramount:float = 0;
 //irot:Quaternion = .{0,0,0,1};
-rotationamount:float = 0;
-neg := 1;
 
 record_buffers :: (r:*fwdpp_r) {
     
@@ -249,22 +248,21 @@ record_buffers :: (r:*fwdpp_r) {
     world.transform = .{coef=.[.[1,0,0,0],.[0,1,0,0],.[0,0,1,0],.[0,0,0,1]]};
 
 
-    view:matr44 = translate_1(Vector3.{0,0,0});
-
-
-    rotationamount += 0.001;
-    clamp_reset(rotationamount,-1,1);
-    rot.x = sin(rotationamount) + cos(rotationamount);
-
-    rotation := rotation_matrix(Matrix4,rot);
+    m_view := translate(world.transform,Vector3.{0,0,0});
+    ramount += 0.001;
+    clamp_reset(ramount,-1,1);
+    rot.y = sin(ramount) + cos(ramount);
+    rotation := rotate(world.transform,rot);
 
     scale := make_scale_matrix4(Vector3.{1,1,1});
 
-    model_matrix:Matrix4 = view * rotation * scale;
+    model_matrix:Matrix4 = m_view * rotation * scale;
+    
+    projection:Matrix4 = make_projection_matrix(1.2773,xx ( r.pipeline.Extent.width / r.pipeline.Extent.height ), 1000, 0.1); 
 
-    projection:matr44 = perspective(1.22173,xx ( r.pipeline.Extent.width / r.pipeline.Extent.height ),1,0); 
-
-    world.transform = projection * view  * model_matrix;
+    view := make_look_at_matrix(Vector3.{100,0,0},Vector3.{0,0,0},Vector3.{0,1,0});
+    // projection.coef[1][1] *= -1;
+    world.transform = view * model_matrix * projection;
      
    //print("%\n",world.transform);
 	

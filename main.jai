@@ -1,10 +1,46 @@
 winf:winfo_t;
 
+indices :: u32.[
+        //Top
+        2, 6, 7,
+        2, 3, 7,
+
+        //Bottom
+        0, 4, 5,
+        0, 1, 5,
+
+        //Left
+        0, 2, 6,
+        0, 4, 6,
+
+        //Right
+        1, 3, 7,
+        1, 5, 7,
+
+        //Front
+        0, 2, 3,
+        0, 1, 3,
+
+        //Back
+        4, 6, 7,
+        4, 5, 7
+];
+
+vertices :: Vector3.[
+        .{-1, -1,  0.5}, //0
+        .{1, -1,  0.5}, //1
+        .{-1,  1,  0.5}, //2
+        .{1,  1,  0.5}, //3
+        .{-1, -1, -0.5}, //4
+        .{1, -1, -0.5}, //5
+        .{-1,  1, -0.5}, //6
+        .{1,  1, -0.5},  //7
+]; 
 
 Init :: () {
-    model := parse_3mf("assets/box.3mf");
+    //model := parse_3mf("assets/box.3mf");
     rend = init_renderer(winf);
-    load_mesh(*rend,model);
+    load_mesh(*rend,vertices,indices);
     print("%\n",rend);
 } @START
 I:int = 0;

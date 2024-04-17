@@ -10,6 +10,6 @@ layout ( push_constant ) uniform constants {
 } Pconst;
 
 void main() {
-    gl_Position = Pconst.render_matrix *vec4(inPosition, 1.0);
+    gl_Position = Pconst.render_matrix * vec4(inPosition, 1.0);
     //fragColor = inColor;
 }

@@ -93,6 +93,50 @@ load_mesh :: (r:*fwdpp_r,modelInf:MFFP_parser) {
     context.staging_buffer = vstaging_buffer;
     context.istaging_buffer = istaging_buffer;
 }
+
+load_mesh :: (r:*fwdpp_r,vertexes:[] Vector3,indexes:[]u32) {
+
+    verts:[] Vector3 = vertexes;
+    indices:[] u32 = indexes;
+    // we need to switch how we handle data based on file
+
+    print("verts:%\nindices:%\n",verts,indices);
+    vbufsize := verts.count * size_of(Vector3);
+    ibufsize := indices.count * size_of(u32);
+    r.mesh.vertexBuf = alloc_buffers(xx (vbufsize),.VERTEX_BUFFER_BIT | .TRANSFER_DST_BIT | .SHADER_DEVICE_ADDRESS_BIT,r,.GPU_ONLY);
+    devAddrInfo:VkBufferDeviceAddressInfo = .{};
+    devAddrInfo.pNext = null;
+    devAddrInfo.buffer = r.mesh.vertexBuf.vBuffer;
+
+    r.mesh.vertexLoc = vkGetBufferDeviceAddress(r.pipeline.lDevice,*devAddrInfo);
+    
+    r.mesh.indexBuf = alloc_buffers(xx ibufsize, .VK_BUFFER_USAGE_INDEX_BUFFER_BIT | .VK_BUFFER_USAGE_TRANSFER_DST_BIT,r,.GPU_ONLY);
+ 
+    r.mesh.vertCount = indices.count ;
+
+    vstaging_buffer := alloc_buffers(xx (vbufsize), .VK_BUFFER_USAGE_TRANSFER_SRC_BIT,r,.CPU_ONLY);
+
+    data:*void;
+    if vkMapMemory(r.pipeline.lDevice,vstaging_buffer.vkmem,0,xx (vbufsize),0,*data) != .VK_SUCCESS then exit(1);
+    memcpy(data,verts.data,vbufsize);
+    vkUnmapMemory(r.pipeline.lDevice,vstaging_buffer.vkmem);
+
+    idata:*void;
+    istaging_buffer := alloc_buffers(xx (ibufsize), .VK_BUFFER_USAGE_TRANSFER_SRC_BIT,r,.CPU_ONLY);
+
+    if vkMapMemory(r.pipeline.lDevice,istaging_buffer.vkmem,0,xx (ibufsize),0,*idata) != .VK_SUCCESS then exit(1);
+    memcpy(idata,indices.data,ibufsize);
+    vkUnmapMemory(r.pipeline.lDevice,istaging_buffer.vkmem);
+
+    print("%\n",data);
+    print("%\n",vstaging_buffer.vkmem);
+    context.indices = indices;
+    context.ibufsize = ibufsize;
+    context.vbufsize = vbufsize;
+    context.staging_buffer = vstaging_buffer;
+    context.istaging_buffer = istaging_buffer;
+}
+
 cleanup :: (r:fwdpp_r) {
     vkDestroySwapchainKHR(r.pipeline.lDevice,r.pipeline.sChain,null);
     for view: r.pipeline.ImageViews {
@@ -836,7 +880,7 @@ Mesh :: struct {
 }
 
 World :: struct {
-    transform:matr44;
+    transform:Matrix4;
 }
 
 memtype :: enum {
