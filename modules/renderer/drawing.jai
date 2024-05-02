@@ -1,4 +1,6 @@
 IDENTITY :: Matrix4.{coef=.[.[1,0,0,0],.[0,1,0,0],.[0,0,1,0],.[0,0,0,1]]};
+Resize_Requested:bool;
+
 
 deviceWait :: (r:fwdpp_r) {
     vkDeviceWaitIdle(r.pipeline.lDevice);
@@ -6,12 +8,14 @@ deviceWait :: (r:fwdpp_r) {
 #placeholder Submit;
 
 
-draw_frame :: (r:*fwdpp_r) {
-    begin := seconds_since_init();
+draw_frame :: (r:*fwdpp_r,window:winfo_t) {
+    // begin := seconds_since_init();
     imageIndex = 0;
     //print("Frame %\n", frame_index);
 
-
+    if Resize_Requested {
+        resize_swapchain(r,window);
+    }
     frame_index += 1;
     index := frame_index % FRAME_COUNT;
     cmdIndex = frame_index % FRAME_COUNT;
@@ -42,8 +46,13 @@ draw_frame :: (r:*fwdpp_r) {
     presentInfo.pSwapchains        = *r.pipeline.sChain;
     presentInfo.pImageIndices      = *imageIndex;
     r.pipeline.g_Pipeline.presentinfo = presentInfo;
-    vkQueuePresentKHR(r.pipeline.pQueue, *presentInfo);
-    end := seconds_since_init();
+    {
+    err := vkQueuePresentKHR(r.pipeline.pQueue, *presentInfo);
+    if err == .VK_ERROR_OUT_OF_DATE_KHR {
+        Resize_Requested = true;
+    }
+    }
+    //end := seconds_since_init();
 
     //print("delta:%\nframerate:%\n", end - begin,frame_index/begin);
 }
@@ -97,7 +106,7 @@ depth_attachment_info :: (view:VkImageView, layout:VkImageLayout) -> VkRendering
     return depthAttachment;
 }
 
-rendering_info :: (renderExtent:VkExtent2D,  colorAttachment:*VkRenderingAttachmentInfo,depthAttachment:*VkRenderingAttachmentInfo) -> VkRenderingInfo
+rendering_info :: (renderExtent:VkExtent2D, colorAttachment:*VkRenderingAttachmentInfo,depthAttachment:*VkRenderingAttachmentInfo) -> VkRenderingInfo
 {
     renderInfo:VkRenderingInfo  = .{};
     renderInfo.sType = .VK_STRUCTURE_TYPE_RENDERING_INFO;
@@ -120,9 +129,14 @@ ramount:float = 0;
 record_buffers :: (r:*fwdpp_r) {
     
     index := frame_index % FRAME_COUNT;
+    err:VkResult = vkAcquireNextImageKHR(r.pipeline.lDevice, r.pipeline.sChain, U64_MAX, imageAvailableSemaphores[index], VK_NULL_HANDLE, *imageIndex);
 
-    vkAcquireNextImageKHR(r.pipeline.lDevice, r.pipeline.sChain, U64_MAX, imageAvailableSemaphores[index], VK_NULL_HANDLE, *imageIndex);
-
+    if err == .VK_ERROR_OUT_OF_DATE_KHR {
+        Resize_Requested = true;
+        print("ambouttaresize");
+        return;
+    }
+    
     vkResetCommandBuffer(commandBuffers[index],0);
 
     beginInfo: VkCommandBufferBeginInfo = .{};

@@ -4,7 +4,6 @@
 inputs_this_frame:[..] u32;
 
 
-rend:fwdpp_r;
 
 winfo_t :: struct {
     whnd:Window_Type;

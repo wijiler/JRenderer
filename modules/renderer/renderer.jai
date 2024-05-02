@@ -146,6 +146,9 @@ cleanup :: (r:fwdpp_r) {
     vkFreeMemory(r.pipeline.lDevice,context.staging_buffer.vkmem,null);
     vkFreeMemory(r.pipeline.lDevice,r.mesh.vertexBuf.vkmem,null);
     vkFreeMemory(r.pipeline.lDevice,r.mesh.indexBuf.vkmem,null);
+    vkFreeMemory(r.pipeline.lDevice,r.pipeline.depthimgmem,null);
+    vkDestroyImage(r.pipeline.lDevice,r.pipeline.depthimg,null);
+    vkDestroyImageView(r.pipeline.lDevice,r.pipeline.depthImgView,null);
     vkDestroyBuffer(r.pipeline.lDevice,r.mesh.indexBuf.vBuffer,null);
     vkDestroyBuffer(r.pipeline.lDevice,r.mesh.vertexBuf.vBuffer,null);
     vkDestroySemaphore(r.pipeline.lDevice,r.pipeline.g_Pipeline.sync.imageAvailable[0],null);
@@ -505,7 +508,7 @@ get_image_views :: (pipeline:*Vk_Pipeline) {
     allocInfo.memoryTypeIndex = memindex;
 
     if (vkAllocateMemory(pipeline.lDevice, *allocInfo, null, *pipeline.depthimgmem) != .VK_SUCCESS) {
-        log(.Error, "could not create  device memory");
+        log(.Error, "could not create depth memory");
     }
     vkBindImageMemory(pipeline.lDevice, pipeline.depthimg, pipeline.depthimgmem, 0);
     //vkCreateImage(pipeline.Extent.width,pipeline.Extent.height,.VK_FORMAT_D32_SFLOAT_S8_UINT,.VK_IMAGE_TILING_OPTIMAL,.VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,*pipeline.depthimg,*pipeline.depthimgmem);
@@ -773,7 +776,6 @@ init_vk :: (win:winfo_t) -> Vk_Pipeline {
     return vk;
 }
 
-
 is_device_valid :: (devices:[] VkPhysicalDevice,surface:VkSurfaceKHR) -> VkPhysicalDevice,u32,VkPhysicalDeviceFeatures {
 
     devProps:VkPhysicalDeviceProperties = .{};
@@ -845,7 +847,7 @@ choose_schain_settings :: (formats:[] VkSurfaceFormatKHR,modes:[..] VkPresentMod
         GetWindowRect(win.whnd,*rect);
 
         extent.width = xx rect.bottom;
-        extent.width = xx rect.left;
+        extent.height = xx rect.left;
     }
 
     if sCaps.currentExtent.width != U32_MAX then extent = sCaps.currentExtent;
@@ -964,6 +966,94 @@ find_cpu_only_mem :: (memProps:VkPhysicalDeviceMemoryProperties) -> u32 {
         print("no_host_bits\n");
 	return 0;
 
+}
+
+
+resize_swapchain :: (r:*fwdpp_r,window:winfo_t) {
+    vkDeviceWaitIdle(r.pipeline.lDevice);
+
+    vkDestroySwapchainKHR(r.pipeline.lDevice,r.pipeline.sChain,null);
+    for view:r.pipeline.ImageViews {
+        vkDestroyImageView(r.pipeline.lDevice,view,null);
+    } 
+
+    array_reset(*r.pipeline.ImageViews);
+
+    vkDestroyImageView(r.pipeline.lDevice,r.pipeline.depthImgView,null);
+    vkFreeMemory(r.pipeline.lDevice,r.pipeline.depthimgmem,null);
+    vkDestroyImage(r.pipeline.lDevice,r.pipeline.depthimg,null);
+
+    create_schain(r,window);
+
+    Resize_Requested = false;
+}
+
+create_schain :: (r:*fwdpp_r,win:winfo_t) {
+    surfacecapabilites:VkSurfaceCapabilitiesKHR = .{};
+
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(r.pipeline.pDevice,r.pipeline.surface,*surfacecapabilites);
+
+    formatCount:u32 = 0;
+    formats:[] VkSurfaceFormatKHR = .{};
+    vkGetPhysicalDeviceSurfaceFormatsKHR(r.pipeline.pDevice, r.pipeline.surface, *formatCount, null);
+    formats = NewArray(formatCount,VkSurfaceFormatKHR);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(r.pipeline.pDevice, r.pipeline.surface, *formatCount, formats.data);
+
+    presentModeCount:u32 = 0 ;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(r.pipeline.pDevice, r.pipeline.surface, *presentModeCount, null);
+    modes:[..] VkPresentModeKHR;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(r.pipeline.pDevice, r.pipeline.surface, *presentModeCount, modes.data);
+
+    imgformat,mode,extent := choose_schain_settings(formats,modes,surfacecapabilites,win);
+
+    imgcount := surfacecapabilites.minImageCount + 1;
+
+    if surfacecapabilites.maxImageCount > 0 && imgcount > surfacecapabilites.maxImageCount {
+        imgcount = surfacecapabilites.maxImageCount;
+    }
+
+    createscInfo:VkSwapchainCreateInfoKHR = .{};
+
+    createscInfo.surface = r.pipeline.surface;
+    createscInfo.minImageCount = imgcount;
+    createscInfo.imageFormat = imgformat.format;
+    createscInfo.imageColorSpace = imgformat.colorSpace;
+    createscInfo.imageExtent = extent;
+    createscInfo.imageArrayLayers = 1;
+    createscInfo.imageUsage = .VK_IMAGE_USAGE_TRANSFER_DST_BIT | .VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+    // our graphics queue is the same as the present queue
+    createscInfo.imageSharingMode = .VK_SHARING_MODE_EXCLUSIVE;
+
+    createscInfo.preTransform = surfacecapabilites.currentTransform;
+
+    createscInfo.compositeAlpha = .VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+
+    createscInfo.presentMode = mode;
+    createscInfo.clipped = VK_TRUE;
+
+    createscInfo.oldSwapchain = VK_NULL_HANDLE;
+
+
+    {
+        result := vkCreateSwapchainKHR(r.pipeline.lDevice,*createscInfo,null,*r.pipeline.sChain);
+        if result != .VK_SUCCESS {
+            log(.Error,sprint("Could not create swapchain because %\n scCreate:%\n",result,createscInfo));
+        }
+    }
+
+    log(.Info,"Succesfully recreated swapchain");
+
+    // get vkImages
+
+    vkGetSwapchainImagesKHR(r.pipeline.lDevice, r.pipeline.sChain, *imgcount, null);
+    r.pipeline.imgs = NewArray(imgcount,VkImage);
+    vkGetSwapchainImagesKHR(r.pipeline.lDevice, r.pipeline.sChain, *imgcount, r.pipeline.imgs.data);
+
+    r.pipeline.Extent = extent;
+    r.pipeline.Format = imgformat.format;
+
+    get_image_views(*r.pipeline);
 }
 
 #load "log.jai";

@@ -1,4 +1,5 @@
 winf:winfo_t;
+rend:fwdpp_r;
 
 indices :: u32.[
         //Top
@@ -46,7 +47,7 @@ Init :: () {
 I:int = 0;
 framerate:int;
 get_frame_time :: () {
-    draw_frame(*rend);
+    draw_frame(*rend,winf);
     
     // I += 1;
     // framerate = cast(int) (I/seconds_since_init());
