@@ -1,5 +1,4 @@
 #run build();
-
 build :: () {
         w := compiler_create_workspace("jCAD debug");
         options := get_build_options();

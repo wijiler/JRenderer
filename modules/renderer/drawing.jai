@@ -1,3 +1,5 @@
+IDENTITY :: Matrix4.{coef=.[.[1,0,0,0],.[0,1,0,0],.[0,0,1,0],.[0,0,0,1]]};
+
 deviceWait :: (r:fwdpp_r) {
     vkDeviceWaitIdle(r.pipeline.lDevice);
 }
@@ -111,7 +113,7 @@ rendering_info :: (renderExtent:VkExtent2D,  colorAttachment:*VkRenderingAttachm
 }
 // Pick a color with which to clear the screen.
 
-rot:Quaternion = .{0,0,0,1};
+rot:Quaternion = .{0,0.5,0,1};
 ramount:float = 0;
 //irot:Quaternion = .{0,0,0,1};
 
@@ -245,24 +247,24 @@ record_buffers :: (r:*fwdpp_r) {
 
     offset:u64 = 0;
 
-    world.transform = .{coef=.[.[1,0,0,0],.[0,1,0,0],.[0,0,1,0],.[0,0,0,1]]};
+    //world.transform = .{coef=.[.[1,0,0,0],.[0,1,0,0],.[0,0,1,0],.[0,0,0,1]]};
 
 
-    m_view := translate(world.transform,Vector3.{0,0,0});
-    ramount += 0.001;
-    clamp_reset(ramount,-1,1);
-    rot.y = sin(ramount) + cos(ramount);
-    rotation := rotate(world.transform,rot);
+    m_view:Matrix4 = translate(IDENTITY,Vector3.{0,0,0});
+    // ramount += 0.001;
+    // clamp_reset(ramount,-1,1);
+    // rot.y = sin(ramount) / cos(ramount);
+    rotation:Matrix4 = rotate(IDENTITY,rot);
 
-    scale := make_scale_matrix4(Vector3.{1,1,1});
+    scale_matr:Matrix4 = scale(IDENTITY,Vector3.{1,1,1});
 
-    model_matrix:Matrix4 = m_view * rotation * scale;
-    
-    projection:Matrix4 = make_projection_matrix(1.2773,xx ( r.pipeline.Extent.width / r.pipeline.Extent.height ), 1000, 0.1); 
+    model_matrix:Matrix4 = scale_matr * rotation * m_view;
 
-    view := make_look_at_matrix(Vector3.{100,0,0},Vector3.{0,0,0},Vector3.{0,1,0});
+    projection:Matrix4 = make_projection_matrix(1.2773,xx ( r.pipeline.Extent.width / r.pipeline.Extent.height ), 1, 0.1); 
+
+    view := make_look_at_matrix(Vector3.{0,0,0.5},Vector3.{0,0,0},Vector3.{0,1,0});
     // projection.coef[1][1] *= -1;
-    world.transform = view * model_matrix * projection;
+    world.transform = model_matrix * view * projection;
      
    //print("%\n",world.transform);
 	
@@ -284,27 +286,7 @@ record_buffers :: (r:*fwdpp_r) {
 
     vkEndCommandBuffer(commandBuffers[index]);
 }
-//libvulkan :: #library "../Vulkan/win/libvulkan";
 
-
-
-// framebuffers :: (gpLine:*fwdpp_r) {
-//     gpLine.pipeline.g_Pipeline.fbuffers = NewArray(gpLine.pipeline.ImageViews.count,VkFramebuffer);
-
-//     for 0..gpLine.pipeline.ImageViews.count -1 {
-//         framebufferCI:VkFramebufferCreateInfo;
-//         //framebufferCI.renderPass = gpLine.pipeline.g_Pipeline.rpass;
-//         framebufferCI.attachmentCount = 1;
-//         framebufferCI.pAttachments = *gpLine.pipeline.ImageViews[it];
-//         framebufferCI.width = gpLine.pipeline.Extent.width;
-//         framebufferCI.height = gpLine.pipeline.Extent.height;
-//         framebufferCI.layers = 1;
-//         result := vkCreateFramebuffer(gpLine.pipeline.lDevice,*framebufferCI,null,*gpLine.pipeline.g_Pipeline.fbuffers[it]);
-//         if result != .VK_SUCCESS {
-//             log(.Warning,sprint("Could not create framebuffer because:%\n",result));
-//         }
-//     }
-// }
 
 init_cbuf :: (gpLine:*fwdpp_r) {
 
